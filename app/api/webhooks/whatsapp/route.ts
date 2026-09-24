@@ -14,23 +14,32 @@ export async function POST(req: NextRequest) {
     let userText = '';
     let pushName = 'Paciente';
 
-    // 1. Parser para Evolution API (v1 / v2)
-    if (body.event === 'messages.upsert' && body.data) {
-      const msgData = body.data;
+    // 1. Parser para Evolution API (v1 / v2, case-insensitive)
+    const eventName = (body.event || '').toLowerCase();
+    const isEvolutionEvent =
+      eventName.includes('messages') ||
+      eventName.includes('upsert') ||
+      body.data?.key ||
+      (Array.isArray(body.data) && body.data[0]?.key);
+
+    if (isEvolutionEvent && body.data) {
+      const msgData = Array.isArray(body.data) ? body.data[0] : body.data;
+
       if (msgData.key?.fromMe) {
         return NextResponse.json({ status: 'ignored', reason: 'Mensagem enviada pela própria instância' });
       }
 
-      const rawJid = msgData.key?.remoteJid || '';
-      senderPhone = rawJid.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+      const rawJid = msgData.key?.remoteJid || msgData.key?.participant || '';
+      senderPhone = rawJid.replace('@s.whatsapp.net', '').replace('@g.us', '').replace(/\D/g, '');
 
       userText =
         msgData.message?.conversation ||
         msgData.message?.extendedTextMessage?.text ||
         msgData.message?.buttonsResponseMessage?.selectedButtonId ||
+        msgData.message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
         '';
 
-      pushName = msgData.pushName || 'Paciente';
+      pushName = msgData.pushName || body.senderName || 'Paciente';
     }
     // 2. Parser para Z-API
     else if (body.phone && (body.text?.message || body.isGroup === false)) {
