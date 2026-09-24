@@ -55,10 +55,19 @@ export async function POST(req: NextRequest) {
     // Formatar telefone para padrão internacional E.164 (+55...)
     const formattedPhone = senderPhone.startsWith('55') ? `+${senderPhone}` : `+55${senderPhone}`;
 
-    // Buscar primeira clínica cadastrada
-    const clinic = await prisma.clinic.findFirst();
+    // Buscar primeira clínica cadastrada ou criar padrão se o banco for novo
+    let clinic = await prisma.clinic.findFirst();
     if (!clinic) {
-      return NextResponse.json({ error: 'Nenhuma clínica cadastrada no sistema' }, { status: 500 });
+      clinic = await prisma.clinic.create({
+        data: {
+          name: 'Clínica Saúde & Vida',
+          email: 'contato@clinica.com.br',
+          phone: '+5511999999999',
+          specialty: 'Clínica Geral',
+          slotDurationMinutes: 30,
+          minCancelHours: 2,
+        },
+      });
     }
 
     // Buscar ou criar paciente no banco de dados

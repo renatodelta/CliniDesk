@@ -6,9 +6,18 @@ export const dynamic = 'force-dynamic';
 // GET /api/clinic/settings - Obter configurações atuais da clínica
 export async function GET() {
   try {
-    const clinic = await prisma.clinic.findFirst();
+    let clinic = await prisma.clinic.findFirst();
     if (!clinic) {
-      return NextResponse.json({ error: 'Nenhuma clínica cadastrada' }, { status: 404 });
+      clinic = await prisma.clinic.create({
+        data: {
+          name: 'Clínica Saúde & Vida',
+          email: 'contato@clinica.com.br',
+          phone: '+5511999999999',
+          specialty: 'Clínica Geral',
+          slotDurationMinutes: 30,
+          minCancelHours: 2,
+        },
+      });
     }
 
     let parsedWorkingHours = {};
