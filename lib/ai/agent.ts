@@ -6,15 +6,25 @@ import {
   confirmarRemarcacao,
 } from './tools';
 
-export const SYSTEM_PROMPT = `Você é a assistente virtual inteligente de atendimento e reagendamento de consultas médicas da clínica.
+export const SYSTEM_PROMPT = `Você é a assistente virtual inteligente de atendimento e gestão de consultas da clínica médica.
 
-DIRETRIZES FUNDAMENTAIS DE ATENDIMENTO:
-1. **Tom de voz:** Seja sempre extremamente empático, profissional, claro, direto e acolhedor.
-2. **Identificação e Consulta:** Sempre que o paciente iniciar contato para falar de sua consulta, verifique a consulta atual usando a ferramenta \`buscar_consulta_atual\`.
-3. **Prevenção de Alucinação (REGRA CRÍTICA):** NUNCA afirme, prometa ou invente um horário vago sem antes chamar expressamente a ferramenta \`buscar_horarios_disponiveis\`. Se o paciente pedir um horário em um dia específico, primeiro consulte a ferramenta para ver os horários realmente livres.
-4. **Confirmação Explícita de Remarcação:** Antes de chamar a ferramenta \`confirmar_remarcacao\`, você DEVE perguntar ao paciente se ele realmente confirma a remarcação para a data e horário exatos escolhidos. Somente chame \`confirmar_remarcacao\` após o paciente dar sinal positivo claro.
-5. **Transbordo para Recepção Humana:** Se o paciente fizer perguntas sobre diagnósticos médicos, receitas, apresentar sintomas graves de emergência ou demonstrar extrema irritação/insatisfação, responda educadamente que estará encaminhando o caso imediatamente para a recepção humana e encerre a tentativa de reagendamento automático.
-6. **Respostas Claras para WhatsApp:** Suas respostas serão enviadas por WhatsApp, portanto utilize formatação amigável (como negritos em *datas* e *horários*) e parágrafos curtos.`;
+DIRETRIZES FUNDAMENTAIS DE ATENDIMENTO E FLUXO:
+1. **Saudação Inicial e Menu de Opções:** Quando o paciente mandar uma saudação (ex: "oi", "olá", "bom dia", "boa tarde", "boa noite") ou iniciar o contato, dê boas-vindas acolhedoras e apresente de forma muito clara as 3 opções de atendimento:
+   - 1️⃣ *Consultar agendamento* (Verificar detalhes da consulta marcada)
+   - 2️⃣ *Remarcar consulta* (Ver horários livres e escolher nova data)
+   - 3️⃣ *Desmarcar consulta* (Cancelar agendamento existente)
+
+2. **Identificação e Consulta:** Quando o paciente escolher consultar (opção 1), utilize a ferramenta \`buscar_consulta_atual\` para trazer os detalhes da consulta.
+
+3. **Prevenção de Alucinação (REGRA CRÍTICA DE REMARCAÇÃO):** NUNCA invente ou prometa um horário vago sem antes chamar a ferramenta \`buscar_horarios_disponiveis\`. Se o paciente escolher remarcar (opção 2), consulte primeiro a grade oficial.
+
+4. **Confirmação de Remarcação:** Antes de chamar \`confirmar_remarcacao\`, confirme se o paciente aceita a nova data e horário.
+
+5. **Cancelamento:** Se o paciente escolher desmarcar (opção 3), identifique a consulta e chame \`cancelar_consulta\`.
+
+6. **Transbordo Humano:** Dores graves, urgências médicas, dúvidas sobre receitas ou reclamações devem ser direcionadas imediatamente para a recepção humana.
+
+7. **Formatação Amigável para WhatsApp:** Use negritos em *datas* e *horários*, emojis moderados e parágrafos curtos.`;
 
 // Definição das ferramentas no formato OpenAI JSON Schema
 const openaiTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
@@ -224,84 +234,96 @@ async function processWithFallbackIntelligence(
   const toolsExecuted: Array<{ name: string; args: any; result: any }> = [];
   const msgLower = userMessage.toLowerCase();
 
-  // 1. Identificar se quer consultar agendamento atual
-  if (
-    msgLower.includes('consulta') ||
-    msgLower.includes('agendamento') ||
-    msgLower.includes('minha data') ||
-    msgLower.includes('tenho hor') ||
-    msgLower.includes('quando') ||
-    msgLower.includes('marcado') ||
-    msgLower.includes('oi') ||
-    msgLower.includes('olá')
-  ) {
+  // 1. Saudação inicial / Entrada do paciente (Oi, Olá, Bom dia, Boa tarde, Boa noite, Menu)
+  const isGreeting =
+    msgLower === 'oi' ||
+    msgLower === 'olá' ||
+    msgLower === 'ola' ||
+    msgLower.startsWith('bom dia') ||
+    msgLower.startsWith('boa tarde') ||
+    msgLower.startsWith('boa noite') ||
+    msgLower === 'menu' ||
+    msgLower === 'início' ||
+    msgLower === 'inicio';
+
+  if (isGreeting) {
     const resAtual = await buscarConsultaAtual(patientPhone, clinicId);
     toolsExecuted.push({ name: 'buscar_consulta_atual', args: { telefone_paciente: patientPhone }, result: resAtual });
 
-    if (msgLower.includes('oi') || msgLower.includes('olá') || msgLower.includes('bom dia') || msgLower.includes('boa tarde')) {
-      if (resAtual.success && resAtual.data?.appointmentId) {
-        return {
-          reply: `Olá! Seja muito bem-vindo(a).\n\n${resAtual.message}\n\nComo posso ajudar você hoje? Você deseja *confirmar*, *cancelar* ou *reagendar* sua consulta?`,
-          toolsExecuted,
-        };
-      } else {
-        return {
-          reply: `Olá! Seja bem-vindo(a) à nossa clínica. No momento não localizei nenhuma consulta futura no seu número. Gostaria de verificar horários para agendar uma consulta?`,
-          toolsExecuted,
-        };
-      }
+    let infoConsulta = '';
+    if (resAtual.success && resAtual.data?.appointmentId) {
+      infoConsulta = `\n\n📌 *Sua Consulta Atual:* ${resAtual.data.specialty} em *${resAtual.message.split('Data: ')[1]?.split('\n')[0] || ''}*`;
     }
-  }
 
-  // 2. Transbordo médico ou emergência
-  if (
-    msgLower.includes('dor') ||
-    msgLower.includes('reédio') ||
-    msgLower.includes('receita') ||
-    msgLower.includes('sintoma') ||
-    msgLower.includes('emergência') ||
-    msgLower.includes('passar mal')
-  ) {
     return {
-      reply: `Compreendo a sua situação. Como o seu assunto envolve orientação clínica/médica, estou transferindo seu atendimento imediatamente para a nossa recepção humana. Um de nossos colaboradores irá falar com você em instantes.`,
+      reply: `Olá! Seja muito bem-vindo(a) à nossa clínica médica. 🩺✨${infoConsulta}\n\nComo posso ajudar você hoje? Por favor, digite o número ou opção desejada:\n\n1️⃣ *Consultar Agendamento* (Verificar detalhes da sua consulta)\n2️⃣ *Remarcar Consulta* (Escolher um novo dia ou horário)\n3️⃣ *Desmarcar Consulta* (Cancelar o seu agendamento)\n\nComo posso te auxiliar?`,
       toolsExecuted,
     };
   }
 
-  // 3. Solicitação de cancelamento
-  if (msgLower.includes('cancelar') || msgLower.includes('desistir') || msgLower.includes('não vou poder')) {
+  // Opção 1: Consultar agendamento (Digitou "1" ou "consultar")
+  if (
+    msgLower === '1' ||
+    msgLower.includes('consultar') ||
+    msgLower.includes('minha consulta') ||
+    msgLower.includes('ver agendamento') ||
+    msgLower.includes('quando é')
+  ) {
     const resAtual = await buscarConsultaAtual(patientPhone, clinicId);
     toolsExecuted.push({ name: 'buscar_consulta_atual', args: { telefone_paciente: patientPhone }, result: resAtual });
 
-    if (resAtual.data?.appointmentId) {
-      const resCancel = await cancelarConsulta(resAtual.data.appointmentId, 'Solicitado pelo paciente via chat');
-      toolsExecuted.push({ name: 'cancelar_consulta', args: { agendamento_id: resAtual.data.appointmentId }, result: resCancel });
+    if (resAtual.success && resAtual.data?.appointmentId) {
       return {
-        reply: `${resCancel.message}\n\nSe precisar agendar uma nova data no futuro, estarei à disposição!`,
+        reply: `📋 *Detalhes da sua Consulta:*\n\n${resAtual.message}\n\nComo deseja prosseguir?\n1️⃣ *Manter consulta*\n2️⃣ *Remarcar consulta*\n3️⃣ *Desmarcar consulta*`,
         toolsExecuted,
       };
     } else {
       return {
-        reply: `Não encontrei nenhuma consulta ativa para ser cancelada. Se precisar de ajuda, estou à disposição!`,
+        reply: `Não localizei nenhuma consulta futura agendada no seu número. Gostaria de *2* (Ver horários para agendar uma consulta)?`,
         toolsExecuted,
       };
     }
   }
 
-  // 4. Checar horários disponíveis
+  // Opção 3: Desmarcar / Cancelar consulta (Digitou "3" ou "desmarcar" ou "cancelar")
   if (
+    msgLower === '3' ||
+    msgLower.includes('desmarcar') ||
+    msgLower.includes('cancelar') ||
+    msgLower.includes('desistir') ||
+    msgLower.includes('não vou poder')
+  ) {
+    const resAtual = await buscarConsultaAtual(patientPhone, clinicId);
+    toolsExecuted.push({ name: 'buscar_consulta_atual', args: { telefone_paciente: patientPhone }, result: resAtual });
+
+    if (resAtual.data?.appointmentId) {
+      const resCancel = await cancelarConsulta(resAtual.data.appointmentId, 'Solicitado pelo paciente via WhatsApp');
+      toolsExecuted.push({ name: 'cancelar_consulta', args: { agendamento_id: resAtual.data.appointmentId }, result: resCancel });
+      return {
+        reply: `${resCancel.message}\n\nSe precisar agendar uma nova consulta no futuro, estamos à disposição!`,
+        toolsExecuted,
+      };
+    } else {
+      return {
+        reply: `Não encontrei nenhuma consulta ativa agendada no seu número para ser desmarcada.`,
+        toolsExecuted,
+      };
+    }
+  }
+
+  // Opção 2: Remarcar consulta (Digitou "2" ou "remarcar" ou horários)
+  if (
+    msgLower === '2' ||
+    msgLower.includes('remarcar') ||
+    msgLower.includes('mudar') ||
     msgLower.includes('horário') ||
     msgLower.includes('vago') ||
-    msgLower.includes('disponív') ||
     msgLower.includes('quarta') ||
     msgLower.includes('terça') ||
     msgLower.includes('quinta') ||
     msgLower.includes('sexta') ||
-    msgLower.includes('segunda') ||
-    msgLower.includes('reagendar') ||
-    msgLower.includes('mudar')
+    msgLower.includes('segunda')
   ) {
-    // Tentar extrair data solicitada ou usar o dia de amanhã por padrão
     const today = new Date();
     let targetDate = new Date(today);
     targetDate.setDate(today.getDate() + 1);
@@ -324,12 +346,12 @@ async function processWithFallbackIntelligence(
 
     if (resHorarios.data?.slots?.length > 0) {
       return {
-        reply: `Consultei a nossa agenda em tempo real! ${resHorarios.message}\n\nQual desses horários fica melhor para você? Assim que você me disser, eu pergunto a confirmação para efetivar a sua remarcação!`,
+        reply: `📅 *Horários Disponíveis para Agendamento*\n\n${resHorarios.message}\n\nQual desses horários fica melhor para você? Responda com o horário desejado (ex: *14:00*) para confirmarmos!`,
         toolsExecuted,
       };
     } else {
       return {
-        reply: `${resHorarios.message} Deseja que eu verifique em outra data?`,
+        reply: `${resHorarios.message} Deseja consultar outra data?`,
         toolsExecuted,
       };
     }
