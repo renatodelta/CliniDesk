@@ -30,6 +30,28 @@ import {
   Copy,
 } from 'lucide-react';
 
+function formatPhoneBR(phone: string | null | undefined): string {
+  if (!phone) return '';
+  const digits = phone.replace(/\D/g, '');
+  const localDigits = (digits.startsWith('55') && digits.length >= 12) ? digits.slice(2) : digits;
+
+  if (localDigits.length === 11) {
+    return `(${localDigits.slice(0, 2)}) ${localDigits.slice(2, 7)}-${localDigits.slice(7)}`;
+  } else if (localDigits.length === 10) {
+    return `(${localDigits.slice(0, 2)}) ${localDigits.slice(2, 6)}-${localDigits.slice(6)}`;
+  }
+  return phone;
+}
+
+function applyPhoneMask(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (!digits) return '';
+  if (digits.length <= 2) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
+}
+
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<'agenda' | 'simulator' | 'settings'>('agenda');
   const [loading, setLoading] = useState(true);
@@ -39,7 +61,7 @@ export default function Dashboard() {
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
 
   // Estados do Simulador de WhatsApp
-  const [simPhone, setSimPhone] = useState<string>('+5511999991111');
+  const [simPhone, setSimPhone] = useState<string>('(11) 99999-1111');
   const [simMessage, setSimMessage] = useState<string>('');
   const [chatLog, setChatLog] = useState<Array<{ sender: 'user' | 'assistant'; text: string; time: string }>>([
     {
@@ -63,7 +85,7 @@ export default function Dashboard() {
 
   // Estados do Formulário de Novo Agendamento
   const [showModalNewAppt, setShowModalNewAppt] = useState(false);
-  const [newApptPhone, setNewApptPhone] = useState('+5511999994444');
+  const [newApptPhone, setNewApptPhone] = useState('(11) 99999-4444');
   const [newApptName, setNewApptName] = useState('');
   const [newApptTime, setNewApptTime] = useState('');
   const [newApptNotes, setNewApptNotes] = useState('');
@@ -457,7 +479,7 @@ export default function Dashboard() {
                               <div className="font-bold text-slate-800">{appt.patient?.name}</div>
                               <div className="text-[10px] text-slate-400 font-mono">ID: {appt.patient?.id.slice(0, 8)}</div>
                             </td>
-                            <td className="p-4 text-slate-700 font-mono font-medium">{appt.patient?.phone}</td>
+                            <td className="p-4 text-slate-700 font-mono font-medium">{formatPhoneBR(appt.patient?.phone)}</td>
                             <td className="p-4">
                               <span
                                 className={`px-3 py-1 rounded-full text-[11px] font-bold border inline-flex items-center ${
@@ -553,7 +575,7 @@ export default function Dashboard() {
                   <input
                     type="text"
                     value={simPhone}
-                    onChange={(e) => setSimPhone(e.target.value)}
+                    onChange={(e) => setSimPhone(applyPhoneMask(e.target.value))}
                     className="bg-white/10 text-white placeholder-teal-200 border border-white/20 px-2.5 py-1 rounded-lg text-[11px] font-mono w-32 focus:outline-none"
                     title="Telefone do Paciente em Simulação"
                   />
@@ -850,9 +872,9 @@ export default function Dashboard() {
                 <input
                   type="text"
                   required
-                  placeholder="+5511999994444"
+                  placeholder="(11) 99999-4444"
                   value={newApptPhone}
-                  onChange={(e) => setNewApptPhone(e.target.value)}
+                  onChange={(e) => setNewApptPhone(applyPhoneMask(e.target.value))}
                   className="medical-input w-full px-3.5 py-2 rounded-xl text-xs font-mono font-medium"
                 />
               </div>
