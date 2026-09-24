@@ -27,6 +27,7 @@ import {
   Sliders,
   Check,
   ArrowRight,
+  Copy,
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -51,6 +52,14 @@ export default function Dashboard() {
   const [simulating, setSimulating] = useState(false);
   const [cronRunning, setCronRunning] = useState(false);
   const [cronNotice, setCronNotice] = useState<string | null>(null);
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
+
+  function handleCopyWebhook() {
+    const url = typeof window !== 'undefined' ? `${window.location.origin}/api/webhooks/whatsapp` : 'https://portalclassic21.com/api/webhooks/whatsapp';
+    navigator.clipboard.writeText(url);
+    setCopiedWebhook(true);
+    setTimeout(() => setCopiedWebhook(false), 3000);
+  }
 
   // Estados do Formulário de Novo Agendamento
   const [showModalNewAppt, setShowModalNewAppt] = useState(false);
@@ -332,9 +341,9 @@ export default function Dashboard() {
             }`}
           >
             <MessageSquare className="h-4 w-4 mr-2 text-teal-600" />
-            Simulador WhatsApp IA
-            <span className="ml-2 px-2 py-0.5 text-[10px] bg-teal-100 text-teal-800 rounded-full font-bold">
-              Tool Calling Live
+            WhatsApp Real & Webhook
+            <span className="ml-2 px-2 py-0.5 text-[10px] bg-emerald-100 text-emerald-800 rounded-full font-bold">
+              Online
             </span>
           </button>
           <button
@@ -484,7 +493,43 @@ export default function Dashboard() {
 
         {/* ABA 2: SIMULADOR DE WHATSAPP IA + INSPECTOR DE TOOL CALLING */}
         {activeTab === 'simulator' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="space-y-6">
+            {/* CARD DE INTEGRAÇÃO DO WEBHOOK REAL */}
+            <div className="medical-card rounded-2xl p-5 border border-teal-200 bg-gradient-to-r from-teal-50 to-emerald-50 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-1 max-w-3xl">
+                <div className="flex items-center space-x-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <h3 className="text-sm font-bold text-slate-900">Endereço do Webhook para WhatsApp Real</h3>
+                  <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-md">
+                    Pronto para Produção
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 font-medium">
+                  Cole este endereço no campo de Webhook da sua <strong>Evolution API</strong> ou <strong>Z-API</strong> para receber mensagens reais de pacientes enviadas diretamente pelo celular:
+                </p>
+                <div className="flex items-center space-x-2 pt-1.5">
+                  <code className="px-3 py-1.5 rounded-xl bg-white border border-teal-200 text-teal-900 font-mono text-xs font-bold shadow-xs">
+                    {typeof window !== 'undefined' ? `${window.location.origin}/api/webhooks/whatsapp` : 'https://portalclassic21.com/api/webhooks/whatsapp'}
+                  </code>
+                  <button
+                    onClick={handleCopyWebhook}
+                    className="flex items-center px-3.5 py-1.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs transition shadow-sm"
+                  >
+                    {copiedWebhook ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 mr-1.5 text-emerald-300" /> Copiado!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5 mr-1.5" /> Copiar Webhook
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* CHAT WHATSAPP TEMA CLARO E AGRADÁVEL (7 COLS) */}
             <div className="lg:col-span-7 medical-card rounded-2xl overflow-hidden flex flex-col h-[650px] border border-slate-200 shadow-md">
               {/* CHAT HEADER WHATSAPP AMIGÁVEL */}
@@ -686,6 +731,7 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+        </div>
         )}
 
         {/* ABA 3: CONFIGURAÇÃO DE EXPEDIENTE & PARÂMETROS DA CLÍNICA */}
