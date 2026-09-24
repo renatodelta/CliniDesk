@@ -11,7 +11,12 @@ export async function sendWhatsAppMessage(toPhone: string, messageText: string):
 
   console.log(`📱 [WhatsApp API Outbound] Para: ${cleanPhone} | Mensagem: "${messageText.replace(/\n/g, ' ')}"`);
 
-  if (!apiUrl || !apiKey || apiKey.includes('seu-token') || apiUrl.includes('example')) {
+  let formattedApiUrl = process.env.WHATSAPP_API_URL || '';
+  if (formattedApiUrl && !formattedApiUrl.startsWith('http://') && !formattedApiUrl.startsWith('https://')) {
+    formattedApiUrl = `https://${formattedApiUrl}`;
+  }
+
+  if (!formattedApiUrl || !apiKey || apiKey.includes('seu-token') || formattedApiUrl.includes('example')) {
     console.log('ℹ️ [WhatsApp Simulation] API de WhatsApp não configurada ou em modo simulação. Mensagem processada localmente.');
     return {
       success: true,
@@ -21,7 +26,7 @@ export async function sendWhatsAppMessage(toPhone: string, messageText: string):
 
   try {
     // Exemplo de integração padrão com Evolution API v1/v2
-    const targetEndpoint = `${apiUrl.replace(/\/$/, '')}/message/sendText/${instanceName}`;
+    const targetEndpoint = `${formattedApiUrl.replace(/\/$/, '')}/message/sendText/${instanceName}`;
 
     const response = await fetch(targetEndpoint, {
       method: 'POST',
