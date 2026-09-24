@@ -1,11 +1,68 @@
 import { prisma } from '@/lib/prisma';
-import { format, parse, addMinutes, isAfter, isBefore, setHours, setMinutes, parseISO } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { addMinutes, isAfter, isBefore } from 'date-fns';
 
 export interface ToolResult {
   success: boolean;
   message: string;
   data?: any;
+}
+
+/**
+ * Converte qualquer string de data (ex: "2026-09-25 13:00", "2026-09-25T13:00")
+ * interpretando explicitamente no fuso de Brasília (UTC-3).
+ */
+export function parseBRT(dateStr: string): Date {
+  let s = dateStr.trim().replace(' ', 'T');
+  if (s.includes('/')) {
+    const parts = s.split('T');
+    const dateParts = parts[0].split('/');
+    if (dateParts.length === 3) {
+      s = `${dateParts[2]}-${dateParts[1].padStart(2, '0')}-${dateParts[0].padStart(2, '0')}` + (parts[1] ? `T${parts[1]}` : '');
+    }
+  }
+  if (!s.includes('Z') && !/[+-]\d{2}:\d{2}$/.test(s)) {
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) {
+      s += ':00';
+    }
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(s)) {
+      s += '-03:00';
+    }
+  }
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    return parsed;
+  }
+  return new Date(dateStr);
+}
+
+/**
+ * Formata um objeto Date para o horário de Brasília (UTC-3 / America/Sao_Paulo)
+ */
+export function formatBRT(date: Date, includeDayOfWeek: boolean = true): string {
+  const formatter = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    weekday: includeDayOfWeek ? 'long' : undefined,
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return formatter.format(date);
+}
+
+export function formatBRTShort(date: Date): string {
+  const formatter = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return formatter.format(date).replace(',', ' às');
 }
 
 /**
@@ -63,7 +120,7 @@ export async function buscarConsultaAtual(telefonePaciente: string, clinicId?: s
       };
     }
 
-    const dataFormatada = format(new Date(appointment.startTime), "EEEE, dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+    const dataFormatada = formatBRT(new Date(appointment.startTime));
 
     return {
       success: true,
@@ -106,13 +163,16 @@ export async function buscarHorariosDisponiveis(
       return { success: false, message: 'Clínica não encontrada no sistema.' };
     }
 
-    // Parse da data informada
-    const targetDate = parseISO(dataDesejada.includes('T') ? dataDesejada.split('T')[0] : dataDesejada);
-    if (isNaN(targetDate.getTime())) {
+    // Data no fuso BRT
+    const cleanDateStr = dataDesejada.includes('T') ? dataDesejada.split('T')[0] : dataDesejada;
+    const targetDateStart = parseBRT(`${cleanDateStr}T00:00:00`);
+    if (isNaN(targetDateStart.getTime())) {
       return { success: false, message: 'Formato de data inválido. Use AAAA-MM-DD.' };
     }
 
-    const dayOfWeek = targetDate.getDay().toString(); // 0 = Domingo, 1 = Segunda...
+    // Obter dia da semana em BRT (0 = Domingo, 1 = Segunda... 6 = Sábado)
+    const dayOfWeek = targetDateStart.getDay().toString();
+
     let workingHoursConfig: Record<string, { active: boolean; start: string; end: string; lunchStart: string; lunchEnd: string }>;
 
     try {
@@ -138,25 +198,20 @@ export async function buscarHorariosDisponiveis(
     const [startH, startM] = dayConfig.start.split(':').map(Number);
     const [endH, endM] = dayConfig.end.split(':').map(Number);
 
-    let currentTime = setMinutes(setHours(targetDate, startH), startM);
-    const endTime = setMinutes(setHours(targetDate, endH), endM);
+    const startTimeBRT = parseBRT(`${cleanDateStr}T${String(startH).padStart(2, '0')}:${String(startM).padStart(2, '0')}:00`);
+    const endTimeBRT = parseBRT(`${cleanDateStr}T${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`);
 
     let lunchStartTime: Date | null = null;
     let lunchEndTime: Date | null = null;
 
     if (dayConfig.lunchStart && dayConfig.lunchEnd) {
-      const [lStartH, lStartM] = dayConfig.lunchStart.split(':').map(Number);
-      const [lEndH, lEndM] = dayConfig.lunchEnd.split(':').map(Number);
-      lunchStartTime = setMinutes(setHours(targetDate, lStartH), lStartM);
-      lunchEndTime = setMinutes(setHours(targetDate, lEndH), lEndM);
+      lunchStartTime = parseBRT(`${cleanDateStr}T${dayConfig.lunchStart}:00`);
+      lunchEndTime = parseBRT(`${cleanDateStr}T${dayConfig.lunchEnd}:00`);
     }
 
     // Buscar agendamentos existentes no dia
-    const startOfDay = new Date(targetDate);
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const endOfDay = new Date(targetDate);
-    endOfDay.setHours(23, 59, 59, 999);
+    const startOfDay = parseBRT(`${cleanDateStr}T00:00:00`);
+    const endOfDay = parseBRT(`${cleanDateStr}T23:59:59`);
 
     const existingAppointments = await prisma.appointment.findMany({
       where: {
@@ -167,10 +222,11 @@ export async function buscarHorariosDisponiveis(
     });
 
     const now = new Date();
+    let currentTime = new Date(startTimeBRT);
 
-    while (isBefore(currentTime, endTime)) {
+    while (isBefore(currentTime, endTimeBRT)) {
       const slotEnd = addMinutes(currentTime, slotDuration);
-      if (isAfter(slotEnd, endTime)) break;
+      if (isAfter(slotEnd, endTimeBRT)) break;
 
       // Verificar se não cai no horário de almoço
       const isLunchTime =
@@ -192,13 +248,20 @@ export async function buscarHorariosDisponiveis(
       });
 
       if (!isLunchTime && isFutureSlot && !isOccupied) {
-        const timeStr = format(currentTime, 'HH:mm');
-        const hour = currentTime.getHours();
+        // Horário formatado em BRT
+        const timeStr = new Intl.DateTimeFormat('pt-BR', {
+          timeZone: 'America/Sao_Paulo',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        }).format(currentTime);
+
+        const hourInt = parseInt(timeStr.split(':')[0], 10);
 
         let matchesPeriod = true;
-        if (periodo === 'manha' && hour >= 12) matchesPeriod = false;
-        if (periodo === 'tarde' && (hour < 12 || hour >= 18)) matchesPeriod = false;
-        if (periodo === 'noite' && hour < 18) matchesPeriod = false;
+        if (periodo === 'manha' && hourInt >= 12) matchesPeriod = false;
+        if (periodo === 'tarde' && (hourInt < 12 || hourInt >= 18)) matchesPeriod = false;
+        if (periodo === 'noite' && hourInt < 18) matchesPeriod = false;
 
         if (matchesPeriod) {
           slots.push(timeStr);
@@ -208,7 +271,7 @@ export async function buscarHorariosDisponiveis(
       currentTime = slotEnd;
     }
 
-    const dataExtenso = format(targetDate, "dd/MM/yyyy (EEEE)", { locale: ptBR });
+    const dataExtenso = formatBRT(targetDateStart, true);
 
     if (slots.length === 0) {
       return {
@@ -275,7 +338,7 @@ export async function cancelarConsulta(agendamentoId: string, motivo?: string): 
       },
     });
 
-    const dataFormatada = format(new Date(appointment.startTime), "dd/MM/yyyy 'às' HH:mm");
+    const dataFormatada = formatBRTShort(new Date(appointment.startTime));
 
     return {
       success: true,
@@ -300,7 +363,7 @@ export async function cancelarConsulta(agendamentoId: string, motivo?: string): 
  */
 export async function confirmarRemarcacao(
   agendamentoId: string,
-  novaDataHora: string // YYYY-MM-DD HH:mm ou ISO
+  novaDataHora: string // YYYY-MM-DD HH:mm ou ISO ou DD/MM/YYYY HH:mm
 ): Promise<ToolResult> {
   try {
     const oldAppointment = await prisma.appointment.findUnique({
@@ -312,16 +375,8 @@ export async function confirmarRemarcacao(
       return { success: false, message: 'Agendamento original não encontrado.' };
     }
 
-    // Tentar converter novaDataHora
-    let newStart: Date;
-    if (novaDataHora.includes('T')) {
-      newStart = parseISO(novaDataHora);
-    } else {
-      newStart = parse(novaDataHora, 'yyyy-MM-dd HH:mm', new Date());
-      if (isNaN(newStart.getTime())) {
-        newStart = parse(novaDataHora, 'dd/MM/yyyy HH:mm', new Date());
-      }
-    }
+    // Converter novaDataHora para Date no fuso BRT (UTC-3)
+    const newStart = parseBRT(novaDataHora);
 
     if (isNaN(newStart.getTime())) {
       return {
@@ -333,11 +388,11 @@ export async function confirmarRemarcacao(
     const slotDuration = oldAppointment.clinic.slotDurationMinutes || 30;
     const newEnd = addMinutes(newStart, slotDuration);
 
-    // Verificar se novo horário colide com algum outro agendamento
+    // Verificar se novo horário colide com algum outro agendamento ativo de outro paciente
     const conflict = await prisma.appointment.findFirst({
       where: {
         clinicId: oldAppointment.clinicId,
-        id: { not: oldAppointment.id },
+        patientId: { not: oldAppointment.patientId },
         status: { in: ['SCHEDULED', 'CONFIRMED'] },
         OR: [
           {
@@ -359,16 +414,22 @@ export async function confirmarRemarcacao(
       };
     }
 
-    // 1. Atualizar agendamento antigo para RESCHEDULED
-    await prisma.appointment.update({
-      where: { id: oldAppointment.id },
+    const dataFormatada = formatBRT(newStart, true);
+    const dataShortFormatada = formatBRTShort(newStart);
+
+    // 1. Atualizar TODOS os agendamentos anteriores do paciente com status SCHEDULED ou CONFIRMED para RESCHEDULED
+    await prisma.appointment.updateMany({
+      where: {
+        patientId: oldAppointment.patientId,
+        status: { in: ['SCHEDULED', 'CONFIRMED'] },
+      },
       data: {
         status: 'RESCHEDULED',
-        notes: `Remarcado para ${format(newStart, "dd/MM/yyyy 'às' HH:mm")}`,
+        notes: `Remarcado para ${dataShortFormatada}`,
       },
     });
 
-    // 2. Criar novo agendamento SCHEDULED
+    // 2. Criar novo agendamento com status SCHEDULED
     const newAppointment = await prisma.appointment.create({
       data: {
         clinicId: oldAppointment.clinicId,
@@ -379,8 +440,6 @@ export async function confirmarRemarcacao(
         notes: `Remarcado a partir do agendamento anterior #${oldAppointment.id.slice(0, 8)}`,
       },
     });
-
-    const dataFormatada = format(newStart, "EEEE, dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
 
     return {
       success: true,
@@ -402,3 +461,4 @@ export async function confirmarRemarcacao(
     };
   }
 }
+

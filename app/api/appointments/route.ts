@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { parseISO, addMinutes } from 'date-fns';
+import { parseBRT } from '@/lib/ai/tools';
 
 export const dynamic = 'force-dynamic';
 
@@ -105,7 +106,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const start = parseISO(startTime);
+    const start = parseBRT(startTime);
     if (isNaN(start.getTime())) {
       return NextResponse.json({ error: 'Formato de startTime inválido.' }, { status: 400 });
     }
