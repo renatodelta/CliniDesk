@@ -4,6 +4,8 @@ import { sendWhatsAppMessage } from '@/lib/whatsapp/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+export const dynamic = 'force-dynamic';
+
 // POST /api/appointments/cron-reminders - Automação de lembrete das próximas 24 horas
 export async function POST(req: NextRequest) {
   try {

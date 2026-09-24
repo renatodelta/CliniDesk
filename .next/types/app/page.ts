@@ -1,4 +1,4 @@
-// File: C:\xampp\htdocs\assistmed\app\page.tsx
+// File: C:\xampp\htdocs\clinidesk\app\page.tsx
 import * as entry from '../../../app/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

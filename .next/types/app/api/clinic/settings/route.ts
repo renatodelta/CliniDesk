@@ -1,4 +1,4 @@
-// File: C:\xampp\htdocs\assistmed\app\api\clinic\settings\route.ts
+// File: C:\xampp\htdocs\clinidesk\app\api\clinic\settings\route.ts
 import * as entry from '../../../../../../app/api/clinic/settings/route.js'
 import type { NextRequest } from 'next/server.js'
 

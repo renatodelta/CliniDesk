@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { parseISO, addMinutes } from 'date-fns';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/appointments - Listagem de agendamentos com filtros por data e status
 export async function GET(req: NextRequest) {
   try {
