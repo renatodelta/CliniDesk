@@ -461,68 +461,66 @@ async function processWithFallbackIntelligence(
     }
   }
 
-  // 5. Confirmação de horário específico (ex: "09:00", "09:00h", "16:15")
+  // 5. Confirmação de horário específico (ex: "09:00", "09:00h", "16:15", "13:15")
   const timeMatch = msgLower.match(/\b(\d{1,2})[:h](\d{2})?\b|\b(\d{1,2})h\b/);
   if (timeMatch) {
     const resAtual = await buscarConsultaAtual(patientPhone, clinicId);
     toolsExecuted.push({ name: 'buscar_consulta_atual', args: { telefone_paciente: patientPhone }, result: resAtual });
 
-    if (resAtual.data?.appointmentId) {
-      // Buscar a última data consultada de remarcação no histórico recente
-      let targetDateStr: string | null = null;
+    // Buscar a última data consultada de remarcação no histórico recente
+    let targetDateStr: string | null = null;
 
-      // 1. Procurar nas mensagens de horários disponíveis ou respostas de remarcação do histórico (do mais recente para o mais antigo)
-      for (let i = history.length - 1; i >= 0; i--) {
-        const msg = history[i].content;
-        if (msg.includes('Horários Disponíveis') || msg.includes('Remarcação') || msg.match(/\d{1,2}[\/\-]\d{1,2}/)) {
-          const dateMatch = extractDateFromText(msg);
-          if (dateMatch) {
-            targetDateStr = dateMatch.dateStr;
-            break;
-          }
+    // 1. Procurar nas mensagens de horários disponíveis ou respostas de remarcação do histórico (do mais recente para o mais antigo)
+    for (let i = history.length - 1; i >= 0; i--) {
+      const msg = history[i].content;
+      if (msg.includes('Horários Disponíveis') || msg.includes('Remarcação') || msg.match(/\d{1,2}[\/\-]\d{1,2}/)) {
+        const dateMatch = extractDateFromText(msg);
+        if (dateMatch) {
+          targetDateStr = dateMatch.dateStr;
+          break;
         }
       }
-
-      // 2. Fallback: procurar qualquer data no histórico se a busca acima falhar
-      if (!targetDateStr) {
-        for (let i = history.length - 1; i >= 0; i--) {
-          const dateMatch = extractDateFromText(history[i].content);
-          if (dateMatch) {
-            targetDateStr = dateMatch.dateStr;
-            break;
-          }
-        }
-      }
-
-      // 3. Se nenhuma data for encontrada no histórico, usar o dia de amanhã como fallback de segurança
-      if (!targetDateStr) {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        targetDateStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
-      }
-
-      let hour = 14;
-      let min = 0;
-
-      if (timeMatch[1]) hour = parseInt(timeMatch[1], 10);
-      else if (timeMatch[3]) hour = parseInt(timeMatch[3], 10);
-
-      if (timeMatch[2]) min = parseInt(timeMatch[2], 10);
-
-      const novaDataHoraStr = `${targetDateStr} ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-
-      const resRemarcar = await confirmarRemarcacao(resAtual.data.appointmentId, novaDataHoraStr);
-      toolsExecuted.push({
-        name: 'confirmar_remarcacao',
-        args: { agendamento_id: resAtual.data.appointmentId, nova_data_hora: novaDataHoraStr },
-        result: resRemarcar,
-      });
-
-      return {
-        reply: `${resRemarcar.message}\n\nSua consulta foi atualizada no sistema. Se precisar de algo mais, estamos à disposição!`,
-        toolsExecuted,
-      };
     }
+
+    // 2. Fallback: procurar qualquer data no histórico se a busca acima falhar
+    if (!targetDateStr) {
+      for (let i = history.length - 1; i >= 0; i--) {
+        const dateMatch = extractDateFromText(history[i].content);
+        if (dateMatch) {
+          targetDateStr = dateMatch.dateStr;
+          break;
+        }
+      }
+    }
+
+    // 3. Se nenhuma data for encontrada no histórico, usar o dia de amanhã como fallback de segurança
+    if (!targetDateStr) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      targetDateStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+    }
+
+    let hour = 14;
+    let min = 0;
+
+    if (timeMatch[1]) hour = parseInt(timeMatch[1], 10);
+    else if (timeMatch[3]) hour = parseInt(timeMatch[3], 10);
+
+    if (timeMatch[2]) min = parseInt(timeMatch[2], 10);
+
+    const novaDataHoraStr = `${targetDateStr} ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+
+    const resRemarcar = await confirmarRemarcacao(resAtual.data?.appointmentId || '', novaDataHoraStr, patientPhone);
+    toolsExecuted.push({
+      name: 'confirmar_remarcacao',
+      args: { agendamento_id: resAtual.data?.appointmentId, nova_data_hora: novaDataHoraStr, telefone_paciente: patientPhone },
+      result: resRemarcar,
+    });
+
+    return {
+      reply: `${resRemarcar.message}\n\nSua consulta foi atualizada no sistema. Se precisar de algo mais, estamos à disposição!`,
+      toolsExecuted,
+    };
   }
 
   return {

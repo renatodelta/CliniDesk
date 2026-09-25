@@ -104,7 +104,7 @@ export async function buscarConsultaAtual(telefonePaciente: string, clinicId?: s
           gte: now,
         },
         status: {
-          in: ['SCHEDULED', 'CONFIRMED'],
+          in: ['AGENDADO', 'CONFIRMADO', 'SCHEDULED', 'CONFIRMED'],
         },
       },
       orderBy: {
@@ -371,16 +371,36 @@ export async function cancelarConsulta(agendamentoId: string, motivo?: string): 
  */
 export async function confirmarRemarcacao(
   agendamentoId: string,
-  novaDataHora: string // YYYY-MM-DD HH:mm ou ISO ou DD/MM/YYYY HH:mm
+  novaDataHora: string, // YYYY-MM-DD HH:mm ou ISO ou DD/MM/YYYY HH:mm
+  patientPhone?: string
 ): Promise<ToolResult> {
   try {
-    const oldAppointment = await prisma.appointment.findUnique({
-      where: { id: agendamentoId },
-      include: { clinic: true, patient: true },
-    });
+    let oldAppointment = null;
+    let patient = null;
 
-    if (!oldAppointment) {
+    if (agendamentoId) {
+      oldAppointment = await prisma.appointment.findUnique({
+        where: { id: agendamentoId },
+        include: { clinic: true, patient: true },
+      });
+    }
+
+    if (oldAppointment) {
+      patient = oldAppointment.patient;
+    } else if (patientPhone) {
+      const cleanPhone = patientPhone.replace(/\D/g, '');
+      patient = await prisma.patient.findFirst({
+        where: { phone: { contains: cleanPhone.slice(-8) } },
+      });
+    }
+
+    if (!patient) {
       return { success: false, message: 'Agendamento original não encontrado.' };
+    }
+
+    const clinic = oldAppointment?.clinic || (await prisma.clinic.findFirst());
+    if (!clinic) {
+      return { success: false, message: 'Clínica não encontrada no sistema.' };
     }
 
     // Converter novaDataHora para Date no fuso BRT (UTC-3)
@@ -393,14 +413,14 @@ export async function confirmarRemarcacao(
       };
     }
 
-    const slotDuration = oldAppointment.clinic.slotDurationMinutes || 30;
+    const slotDuration = clinic.slotDurationMinutes || 30;
     const newEnd = addMinutes(newStart, slotDuration);
 
     // Verificar se novo horário colide com algum outro agendamento ativo de outro paciente
     const conflict = await prisma.appointment.findFirst({
       where: {
-        clinicId: oldAppointment.clinicId,
-        patientId: { not: oldAppointment.patientId },
+        clinicId: clinic.id,
+        patientId: { not: patient.id },
         status: { in: ['AGENDADO', 'CONFIRMADO', 'SCHEDULED', 'CONFIRMED'] },
         OR: [
           {
@@ -428,7 +448,7 @@ export async function confirmarRemarcacao(
     // 1. Atualizar TODOS os agendamentos anteriores do paciente ativos para REMARCADO
     await prisma.appointment.updateMany({
       where: {
-        patientId: oldAppointment.patientId,
+        patientId: patient.id,
         status: { in: ['AGENDADO', 'CONFIRMADO', 'SCHEDULED', 'CONFIRMED'] },
       },
       data: {
@@ -440,22 +460,24 @@ export async function confirmarRemarcacao(
     // 2. Criar novo agendamento com status AGENDADO
     const newAppointment = await prisma.appointment.create({
       data: {
-        clinicId: oldAppointment.clinicId,
-        patientId: oldAppointment.patientId,
+        clinicId: clinic.id,
+        patientId: patient.id,
         startTime: newStart,
         endTime: newEnd,
         status: 'AGENDADO',
-        notes: `Remarcado a partir do agendamento anterior #${oldAppointment.id.slice(0, 8)}`,
+        notes: oldAppointment
+          ? `Remarcado a partir do agendamento anterior #${oldAppointment.id.slice(0, 8)}`
+          : 'Agendado via WhatsApp IA',
       },
     });
 
     return {
       success: true,
-      message: `Remarcação efetuada com sucesso! Nova consulta agendada para ${dataFormatada} com ${oldAppointment.clinic.name}.`,
+      message: `Consulta confirmada com sucesso! Nova consulta agendada para ${dataFormatada} com ${clinic.name}.`,
       data: {
         newAppointmentId: newAppointment.id,
-        oldAppointmentId: oldAppointment.id,
-        patientName: oldAppointment.patient.name,
+        oldAppointmentId: oldAppointment?.id,
+        patientName: patient.name,
         newStartTime: newStart.toISOString(),
         newEndTime: newEnd.toISOString(),
         status: 'AGENDADO',
