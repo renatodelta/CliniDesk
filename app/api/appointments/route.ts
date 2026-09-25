@@ -72,11 +72,11 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { patientName, patientPhone, startTime, notes, status } = body;
+    const { patientId, patientName, patientPhone, startTime, notes, status } = body;
 
-    if (!patientPhone || !startTime) {
+    if ((!patientId && !patientPhone) || !startTime) {
       return NextResponse.json(
-        { error: 'Os campos patientPhone e startTime são obrigatórios.' },
+        { error: 'É necessário selecionar um paciente cadastrado e a data/hora.' },
         { status: 400 }
       );
     }
@@ -86,24 +86,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Nenhuma clínica cadastrada.' }, { status: 404 });
     }
 
-    const formattedPhone = patientPhone.startsWith('+') ? patientPhone : `+55${patientPhone.replace(/\D/g, '')}`;
+    const formattedPhone = patientPhone ? (patientPhone.startsWith('+') ? patientPhone : `+55${patientPhone.replace(/\D/g, '')}`) : '';
 
-    // Buscar ou criar paciente
-    let patient = await prisma.patient.findFirst({
-      where: {
-        clinicId: clinic.id,
-        phone: { contains: formattedPhone.slice(-8) },
-      },
-    });
+    // Buscar paciente obrigatoriamente cadastrado
+    let patient = null;
 
-    if (!patient) {
-      patient = await prisma.patient.create({
-        data: {
+    if (patientId) {
+      patient = await prisma.patient.findUnique({
+        where: { id: patientId },
+      });
+    }
+
+    if (!patient && formattedPhone) {
+      patient = await prisma.patient.findFirst({
+        where: {
           clinicId: clinic.id,
-          name: patientName || 'Novo Paciente',
-          phone: formattedPhone,
+          phone: { contains: formattedPhone.slice(-8) },
         },
       });
+    }
+
+    // Se o paciente não estiver cadastrado, Bloquear e Exigir Cadastro Prévio
+    if (!patient) {
+      return NextResponse.json(
+        { error: 'Paciente não cadastrado. É necessário realizar o cadastro do paciente na aba "Cadastro de Pacientes" antes de marcar a consulta.' },
+        { status: 400 }
+      );
     }
 
     const start = parseBRT(startTime);

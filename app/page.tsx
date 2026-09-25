@@ -127,7 +127,8 @@ export default function Dashboard() {
 
   // Modal de Agendamento
   const [showModalNewAppt, setShowModalNewAppt] = useState(false);
-  const [newApptPhone, setNewApptPhone] = useState('(11) 99999-4444');
+  const [selectedPatientId, setSelectedPatientId] = useState<string>('');
+  const [newApptPhone, setNewApptPhone] = useState('');
   const [newApptName, setNewApptName] = useState('');
   const [newApptTime, setNewApptTime] = useState('');
   const [newApptNotes, setNewApptNotes] = useState('');
@@ -246,12 +247,17 @@ export default function Dashboard() {
   // Criar Agendamento Manual
   async function handleCreateAppointment(e: React.FormEvent) {
     e.preventDefault();
+    if (!selectedPatientId) {
+      alert('Selecione obrigatoriamente um paciente cadastrado antes de marcar a consulta.');
+      return;
+    }
     try {
       const res = await fetch('/api/appointments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          patientName: newApptName || 'Novo Paciente',
+          patientId: selectedPatientId,
+          patientName: newApptName,
           patientPhone: newApptPhone,
           startTime: newApptTime,
           notes: newApptNotes,
@@ -260,7 +266,9 @@ export default function Dashboard() {
       const data = await res.json();
       if (data.success) {
         setShowModalNewAppt(false);
+        setSelectedPatientId('');
         setNewApptName('');
+        setNewApptPhone('');
         setNewApptTime('');
         setNewApptNotes('');
         fetchData();
@@ -281,11 +289,15 @@ export default function Dashboard() {
     const time = hourStr || '09:00';
     const formatted = `${year}-${month}-${day}T${time}`;
     setNewApptTime(formatted);
+    setSelectedPatientId('');
+    setNewApptName('');
+    setNewApptPhone('');
     setShowModalNewAppt(true);
   }
 
-  // Abrir Modal de Agendamento pré-preenchido com Paciente
+  // Abrir Modal de Agendamento pré-preenchido com Paciente Cadastrado
   function handleQuickApptForPatient(patient: any) {
+    setSelectedPatientId(patient.id);
     setNewApptName(patient.name);
     setNewApptPhone(formatPhoneBR(patient.phone) || patient.phone);
     setNewApptTime('');
@@ -1517,33 +1529,67 @@ export default function Dashboard() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateAppointment} className="space-y-3 text-xs">
+            <form onSubmit={handleCreateAppointment} className="space-y-3.5 text-xs">
+              {/* SELETOR DE PACIENTE CADASTRADO */}
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Nome do Paciente</label>
-                <input
-                  type="text"
+                <label className="block text-slate-700 font-bold mb-1">Paciente Cadastrado *</label>
+                <select
                   required
-                  placeholder="Ex: Carlos Silva"
-                  value={newApptName}
-                  onChange={(e) => setNewApptName(e.target.value)}
-                  className="medical-input w-full px-3.5 py-2 rounded-xl text-xs font-medium"
-                />
+                  value={selectedPatientId}
+                  onChange={(e) => {
+                    const pId = e.target.value;
+                    setSelectedPatientId(pId);
+                    const p = patients.find((item) => item.id === pId);
+                    if (p) {
+                      setNewApptName(p.name);
+                      setNewApptPhone(formatPhoneBR(p.phone) || p.phone);
+                    } else {
+                      setNewApptName('');
+                      setNewApptPhone('');
+                    }
+                  }}
+                  className="medical-input w-full px-3.5 py-2 rounded-xl text-xs font-medium bg-white border border-slate-200"
+                >
+                  <option value="">-- Selecione um Paciente Cadastrado --</option>
+                  {patients.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} {p.cpf ? `(CPF: ${applyCPFMask(p.cpf)})` : ''} — {formatPhoneBR(p.phone)}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Telefone (com DDD)</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="(11) 99999-4444"
-                  value={newApptPhone}
-                  onChange={(e) => setNewApptPhone(applyPhoneMask(e.target.value))}
-                  className="medical-input w-full px-3.5 py-2 rounded-xl text-xs font-mono font-medium"
-                />
-              </div>
+              {!selectedPatientId ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-900 text-xs space-y-2">
+                  <div className="flex items-center font-bold">
+                    <AlertTriangle className="h-4 w-4 mr-1.5 text-amber-600 shrink-0" />
+                    <span>Paciente Não Cadastrado</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                    O fluxo do sistema exige que o paciente esteja previamente cadastrado antes de realizar o agendamento de uma consulta.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowModalNewAppt(false);
+                      handleOpenPatientModal();
+                    }}
+                    className="w-full py-1.5 px-3 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs transition flex items-center justify-center shadow-xs"
+                  >
+                    <UserPlus className="h-3.5 w-3.5 mr-1.5" />
+                    Cadastrar Paciente Primeiro
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl space-y-1">
+                  <div className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Dados do Paciente Selecionado:</div>
+                  <div className="font-bold text-slate-900">{newApptName}</div>
+                  <div className="font-mono text-slate-600 text-[11px]">{newApptPhone}</div>
+                </div>
+              )}
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Data e Horário de Início</label>
+                <label className="block text-slate-700 font-bold mb-1">Data e Horário de Início *</label>
                 <input
                   type="datetime-local"
                   required
@@ -1564,7 +1610,7 @@ export default function Dashboard() {
                 />
               </div>
 
-              <div className="flex justify-end space-x-2 pt-2">
+              <div className="flex justify-end space-x-2 pt-2 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setShowModalNewAppt(false)}
@@ -1574,7 +1620,8 @@ export default function Dashboard() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-600/15"
+                  disabled={!selectedPatientId}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-600/15 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Salvar Agendamento
                 </button>
