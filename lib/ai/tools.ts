@@ -17,7 +17,11 @@ export function parseBRT(dateStr: string): Date {
     const parts = s.split('T');
     const dateParts = parts[0].split('/');
     if (dateParts.length === 3) {
-      s = `${dateParts[2]}-${dateParts[1].padStart(2, '0')}-${dateParts[0].padStart(2, '0')}` + (parts[1] ? `T${parts[1]}` : '');
+      let year = dateParts[2];
+      if (year.length === 2) {
+        year = `20${year}`;
+      }
+      s = `${year}-${dateParts[1].padStart(2, '0')}-${dateParts[0].padStart(2, '0')}` + (parts[1] ? `T${parts[1]}` : '');
     }
   }
   if (!s.includes('Z') && !/[+-]\d{2}:\d{2}$/.test(s)) {
@@ -164,11 +168,15 @@ export async function buscarHorariosDisponiveis(
     }
 
     // Data no fuso BRT
-    const cleanDateStr = dataDesejada.includes('T') ? dataDesejada.split('T')[0] : dataDesejada;
-    const targetDateStart = parseBRT(`${cleanDateStr}T00:00:00`);
+    const targetDateStart = parseBRT(dataDesejada.includes('T') ? dataDesejada : `${dataDesejada.trim()}T00:00:00`);
     if (isNaN(targetDateStart.getTime())) {
-      return { success: false, message: 'Formato de data inválido. Use AAAA-MM-DD.' };
+      return { success: false, message: 'Formato de data inválido. Use DD/MM/AA (ex: 25/09/26).' };
     }
+
+    const year = targetDateStart.getFullYear();
+    const month = String(targetDateStart.getMonth() + 1).padStart(2, '0');
+    const day = String(targetDateStart.getDate()).padStart(2, '0');
+    const cleanDateStr = `${year}-${month}-${day}`;
 
     // Obter dia da semana em BRT (0 = Domingo, 1 = Segunda... 6 = Sábado)
     const dayOfWeek = targetDateStart.getDay().toString();
