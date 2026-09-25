@@ -34,6 +34,9 @@ model Patient {
   name      String
   phone     String   // E.164 Ex: +5511999999999
   cpf       String?
+  email     String?
+  birthDate String?  @map("birth_date")
+  notes     String?
   createdAt DateTime @default(now()) @map("created_at")
 
   clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
