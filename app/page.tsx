@@ -2,32 +2,39 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Calendar,
+  Calendar as CalendarIcon,
   Clock,
   UserCheck,
   CalendarCheck2,
   CalendarX,
   RefreshCw,
-  MessageSquare,
   Settings,
-  Send,
-  Sparkles,
   Search,
   Phone,
   User,
   CheckCircle2,
   AlertTriangle,
-  Bot,
   Zap,
-  Activity,
   Plus,
   ShieldCheck,
   Stethoscope,
-  HeartPulse,
-  Sliders,
+  Users,
+  UserPlus,
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
+  CalendarRange,
+  ListFilter,
+  Edit3,
+  Trash2,
+  Mail,
+  Shield,
   Check,
-  ArrowRight,
-  Copy,
+  X,
+  UserCog,
+  Briefcase,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
 
 function formatPhoneBR(phone: string | null | undefined): string {
@@ -52,47 +59,74 @@ function applyPhoneMask(value: string): string {
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
 }
 
+// Utilitários de data
+function getStartOfWeek(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Segunda-feira como inicio
+  const start = new Date(d.setDate(diff));
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function getWeekDays(baseDate: Date): Date[] {
+  const start = getStartOfWeek(baseDate);
+  const days: Date[] = [];
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(start);
+    day.setDate(start.getDate() + i);
+    days.push(day);
+  }
+  return days;
+}
+
+const WEEKDAY_NAMES = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+const DAILY_HOURS = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'];
+
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<'agenda' | 'simulator' | 'settings'>('agenda');
+  const [activeTab, setActiveTab] = useState<'agenda' | 'users' | 'settings'>('agenda');
+  const [agendaViewMode, setAgendaViewMode] = useState<'lista' | 'dia' | 'semana'>('semana');
+
   const [loading, setLoading] = useState(true);
   const [clinic, setClinic] = useState<any>(null);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [filterDate, setFilterDate] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
 
-  // Estados do Simulador de WhatsApp
-  const [simPhone, setSimPhone] = useState<string>('(11) 99999-1111');
-  const [simMessage, setSimMessage] = useState<string>('');
-  const [chatLog, setChatLog] = useState<Array<{ sender: 'user' | 'assistant'; text: string; time: string }>>([
-    {
-      sender: 'assistant',
-      text: 'Olá! Sou a assistente virtual de agendamentos. Como posso ajudar com a sua consulta médica hoje?',
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    },
-  ]);
-  const [lastToolsExecuted, setLastToolsExecuted] = useState<any[]>([]);
-  const [simulating, setSimulating] = useState(false);
+  // Controle de datas para Visão Diária e Semanal
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+
+  // Cron
   const [cronRunning, setCronRunning] = useState(false);
   const [cronNotice, setCronNotice] = useState<string | null>(null);
-  const [copiedWebhook, setCopiedWebhook] = useState(false);
 
-  function handleCopyWebhook() {
-    const url = typeof window !== 'undefined' ? `${window.location.origin}/api/webhooks/whatsapp` : 'https://portalclassic21.com/api/webhooks/whatsapp';
-    navigator.clipboard.writeText(url);
-    setCopiedWebhook(true);
-    setTimeout(() => setCopiedWebhook(false), 3000);
-  }
-
-  // Estados do Formulário de Novo Agendamento
+  // Modal de Agendamento
   const [showModalNewAppt, setShowModalNewAppt] = useState(false);
   const [newApptPhone, setNewApptPhone] = useState('(11) 99999-4444');
   const [newApptName, setNewApptName] = useState('');
   const [newApptTime, setNewApptTime] = useState('');
   const [newApptNotes, setNewApptNotes] = useState('');
 
+  // Cadastro de Usuários State
+  const [users, setUsers] = useState<any[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState<string>('ALL');
+  const [showModalUser, setShowModalUser] = useState(false);
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+
+  // Form de Usuário
+  const [userName, setUserName] = useState('');
+  const [userEmail, setUserEmail] = useState('');
+  const [userPhone, setUserPhone] = useState('');
+  const [userRole, setUserRole] = useState<'MEDICO' | 'RECEPCIONISTA' | 'ADMIN'>('MEDICO');
+  const [userSpecialty, setUserSpecialty] = useState('');
+  const [userStatus, setUserStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
+
   // Carregar dados iniciais
   useEffect(() => {
     fetchData();
+    fetchUsers();
   }, [filterDate, filterStatus]);
 
   async function fetchData() {
@@ -122,46 +156,22 @@ export default function Dashboard() {
     }
   }
 
-  // Simular mensagem no Chat IA
-  async function handleSendSimulatedMessage(customText?: string) {
-    const textToSend = customText || simMessage;
-    if (!textToSend.trim() || simulating) return;
-
-    const userTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setChatLog((prev) => [...prev, { sender: 'user', text: textToSend, time: userTime }]);
-    if (!customText) setSimMessage('');
-    setSimulating(true);
-
+  async function fetchUsers() {
     try {
-      const res = await fetch('/api/chat/simulate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patientPhone: simPhone,
-          messageText: textToSend,
-        }),
-      });
-
+      setLoadingUsers(true);
+      const res = await fetch('/api/users');
       const data = await res.json();
-      const botTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-      if (data.reply) {
-        setChatLog((prev) => [...prev, { sender: 'assistant', text: data.reply, time: botTime }]);
+      if (data.users) {
+        setUsers(data.users);
       }
-      if (data.toolsExecuted) {
-        setLastToolsExecuted(data.toolsExecuted);
-      }
-
-      // Recarregar agendamentos em background
-      fetchData();
-    } catch (err: any) {
-      console.error('Erro ao enviar mensagem simulada:', err);
+    } catch (err) {
+      console.error('Erro ao carregar usuários:', err);
     } finally {
-      setSimulating(false);
+      setLoadingUsers(false);
     }
   }
 
-  // Executar Cron de Lembretes 24h
+  // Cron Lembretes
   async function handleTriggerCronReminders() {
     setCronRunning(true);
     setCronNotice(null);
@@ -206,7 +216,18 @@ export default function Dashboard() {
     }
   }
 
-  // Salvar Configurações de Expediente
+  // Abrir Modal de Agendamento com Data/Hora pré-preenchidas
+  function openNewApptModalWithSlot(dateObj: Date, hourStr?: string) {
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const time = hourStr || '09:00';
+    const formatted = `${year}-${month}-${day}T${time}`;
+    setNewApptTime(formatted);
+    setShowModalNewAppt(true);
+  }
+
+  // Salvar Configurações
   async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
     try {
@@ -231,14 +252,116 @@ export default function Dashboard() {
     }
   }
 
+  // Ações de Usuário (CRUD)
+  function handleOpenUserModal(userToEdit?: any) {
+    if (userToEdit) {
+      setEditingUser(userToEdit);
+      setUserName(userToEdit.name);
+      setUserEmail(userToEdit.email);
+      setUserPhone(userToEdit.phone || '');
+      setUserRole(userToEdit.role || 'MEDICO');
+      setUserSpecialty(userToEdit.specialty || '');
+      setUserStatus(userToEdit.status || 'ACTIVE');
+    } else {
+      setEditingUser(null);
+      setUserName('');
+      setUserEmail('');
+      setUserPhone('');
+      setUserRole('MEDICO');
+      setUserSpecialty('');
+      setUserStatus('ACTIVE');
+    }
+    setShowModalUser(true);
+  }
+
+  async function handleSaveUser(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const payload = {
+        id: editingUser?.id,
+        name: userName,
+        email: userEmail,
+        phone: userPhone,
+        role: userRole,
+        specialty: userSpecialty,
+        status: userStatus,
+      };
+
+      const method = editingUser ? 'PUT' : 'POST';
+      const res = await fetch('/api/users', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setShowModalUser(false);
+        fetchUsers();
+      } else {
+        alert(data.error || 'Erro ao salvar usuário.');
+      }
+    } catch (err: any) {
+      alert(`Erro: ${err.message}`);
+    }
+  }
+
+  async function handleDeleteUser(id: string) {
+    if (!confirm('Deseja realmente remover este usuário?')) return;
+    try {
+      const res = await fetch(`/api/users?id=${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        fetchUsers();
+      } else {
+        alert(data.error || 'Erro ao excluir usuário.');
+      }
+    } catch (err: any) {
+      alert(`Erro: ${err.message}`);
+    }
+  }
+
+  async function handleToggleUserStatus(user: any) {
+    try {
+      const newStatus = user.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+      const res = await fetch('/api/users', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...user, status: newStatus }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchUsers();
+      }
+    } catch (err: any) {
+      alert(`Erro: ${err.message}`);
+    }
+  }
+
   // Contadores KPIs
   const totalAppts = appointments.length;
   const confirmedCount = appointments.filter((a) => a.status === 'CONFIRMED').length;
   const rescheduledCount = appointments.filter((a) => a.status === 'RESCHEDULED').length;
   const canceledCount = appointments.filter((a) => a.status === 'CANCELED').length;
 
+  // Filtro de Usuários
+  const filteredUsers = users.filter((u) => {
+    const matchesRole = userRoleFilter === 'ALL' || u.role === userRoleFilter;
+    const matchesSearch =
+      !userSearch ||
+      u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
+      u.email.toLowerCase().includes(userSearch.toLowerCase()) ||
+      (u.specialty && u.specialty.toLowerCase().includes(userSearch.toLowerCase()));
+    return matchesRole && matchesSearch;
+  });
+
+  // Datas da semana atual
+  const weekDays = getWeekDays(selectedDate);
+  const weekStartStr = weekDays[0].toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  const weekEndStr = weekDays[6].toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
       {/* HEADER SUPERIOR CLEAN & SAÚDE */}
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-md px-6 py-4 flex flex-wrap items-center justify-between gap-4 shadow-sm">
         <div className="flex items-center space-x-3.5">
@@ -247,7 +370,7 @@ export default function Dashboard() {
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <h1 className="text-xl font-bold tracking-tight text-slate-900">CliniDesk AI</h1>
+              <h1 className="text-xl font-bold tracking-tight text-slate-900">CliniDesk</h1>
               <span className="px-2 py-0.5 text-[10px] font-semibold bg-teal-50 text-teal-700 border border-teal-200/60 rounded-md">
                 Gestão Médica
               </span>
@@ -262,11 +385,7 @@ export default function Dashboard() {
         <div className="flex items-center flex-wrap gap-3 text-xs font-medium">
           <div className="flex items-center px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-700 font-semibold shadow-xs">
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse mr-2"></span>
-            WhatsApp Ativo
-          </div>
-          <div className="flex items-center px-3.5 py-1.5 rounded-full bg-sky-50 border border-sky-200/80 text-sky-700 font-semibold shadow-xs">
-            <Zap className="h-3.5 w-3.5 mr-1.5 text-sky-600" />
-            IA Tool Calling Pronta
+            Sistema Online
           </div>
           <button
             onClick={handleTriggerCronReminders}
@@ -277,7 +396,10 @@ export default function Dashboard() {
             {cronRunning ? 'Enviando Lembretes...' : 'Disparar Lembretes 24h'}
           </button>
           <button
-            onClick={() => setShowModalNewAppt(true)}
+            onClick={() => {
+              setNewApptTime('');
+              setShowModalNewAppt(true);
+            }}
             className="flex items-center px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition shadow-md shadow-emerald-600/15"
           >
             <Plus className="h-4 w-4 mr-1.5 stroke-[2.5]" />
@@ -298,7 +420,7 @@ export default function Dashboard() {
 
       {/* PAINEL PRINCIPAL */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
-        {/* KPI CARDS LIMPOS E SUAVES */}
+        {/* KPI CARDS */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="medical-card medical-card-hover rounded-2xl p-5 flex items-center justify-between border-l-4 border-l-teal-600">
             <div>
@@ -306,13 +428,13 @@ export default function Dashboard() {
               <p className="text-2xl font-bold text-slate-900 mt-1">{totalAppts}</p>
             </div>
             <div className="h-11 w-11 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center">
-              <Calendar className="h-5 w-5" />
+              <CalendarIcon className="h-5 w-5" />
             </div>
           </div>
 
           <div className="medical-card medical-card-hover rounded-2xl p-5 flex items-center justify-between border-l-4 border-l-emerald-500">
             <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Confirmadas (WhatsApp)</p>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Confirmadas</p>
               <p className="text-2xl font-bold text-emerald-700 mt-1">{confirmedCount}</p>
             </div>
             <div className="h-11 w-11 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
@@ -322,7 +444,7 @@ export default function Dashboard() {
 
           <div className="medical-card medical-card-hover rounded-2xl p-5 flex items-center justify-between border-l-4 border-l-amber-500">
             <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Remarcações IA</p>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Remarcações</p>
               <p className="text-2xl font-bold text-amber-700 mt-1">{rescheduledCount}</p>
             </div>
             <div className="h-11 w-11 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
@@ -341,7 +463,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* NAVEGAÇÃO POR ABAS AGRADÁVEIS */}
+        {/* NAVEGAÇÃO PRINCIPAL DAS ABAS */}
         <div className="flex bg-slate-200/60 p-1.5 rounded-2xl w-fit space-x-1 border border-slate-200">
           <button
             onClick={() => setActiveTab('agenda')}
@@ -351,22 +473,19 @@ export default function Dashboard() {
                 : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
             }`}
           >
-            <Calendar className="h-4 w-4 mr-2 text-teal-600" />
+            <CalendarIcon className="h-4 w-4 mr-2 text-teal-600" />
             Agenda & Consultas
           </button>
           <button
-            onClick={() => setActiveTab('simulator')}
+            onClick={() => setActiveTab('users')}
             className={`flex items-center px-4 py-2 font-semibold text-xs rounded-xl transition ${
-              activeTab === 'simulator'
+              activeTab === 'users'
                 ? 'bg-white text-teal-800 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
             }`}
           >
-            <MessageSquare className="h-4 w-4 mr-2 text-teal-600" />
-            WhatsApp Real & Webhook
-            <span className="ml-2 px-2 py-0.5 text-[10px] bg-emerald-100 text-emerald-800 rounded-full font-bold">
-              Online
-            </span>
+            <Users className="h-4 w-4 mr-2 text-teal-600" />
+            Cadastro de Usuários
           </button>
           <button
             onClick={() => setActiveTab('settings')}
@@ -384,376 +503,611 @@ export default function Dashboard() {
         {/* ABA 1: AGENDA DE CONSULTAS */}
         {activeTab === 'agenda' && (
           <div className="space-y-4">
-            {/* BARRA DE FILTROS */}
-            <div className="medical-card p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Filtrar por Data</label>
+            {/* SELETOR DE MODO DE VISUALIZAÇÃO E CONTROLES DE NAVEGAÇÃO DA AGENDA */}
+            <div className="medical-card p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 border border-slate-200 shadow-xs">
+              {/* TROCA DE MODOS: DIA | SEMANA | LISTA */}
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <button
+                  onClick={() => setAgendaViewMode('semana')}
+                  className={`flex items-center px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                    agendaViewMode === 'semana'
+                      ? 'bg-white text-teal-800 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <CalendarRange className="h-3.5 w-3.5 mr-1.5 text-teal-600" />
+                  Visão Semanal
+                </button>
+                <button
+                  onClick={() => setAgendaViewMode('dia')}
+                  className={`flex items-center px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                    agendaViewMode === 'dia'
+                      ? 'bg-white text-teal-800 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <CalendarDays className="h-3.5 w-3.5 mr-1.5 text-teal-600" />
+                  Visão Diária
+                </button>
+                <button
+                  onClick={() => setAgendaViewMode('lista')}
+                  className={`flex items-center px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                    agendaViewMode === 'lista'
+                      ? 'bg-white text-teal-800 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <ListFilter className="h-3.5 w-3.5 mr-1.5 text-teal-600" />
+                  Visão em Lista
+                </button>
+              </div>
+
+              {/* CONTROLES DE NAVEGAÇÃO DE DATA (CONFORME MODO SELECIONADO) */}
+              {agendaViewMode === 'semana' && (
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-1 bg-white border border-slate-200 rounded-xl p-1 shadow-2xs">
+                    <button
+                      onClick={() => {
+                        const d = new Date(selectedDate);
+                        d.setDate(d.getDate() - 7);
+                        setSelectedDate(d);
+                      }}
+                      className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 transition"
+                      title="Semana anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setSelectedDate(new Date())}
+                      className="px-3 py-1 text-xs font-bold text-teal-800 hover:bg-teal-50 rounded-lg transition"
+                    >
+                      Esta Semana
+                    </button>
+                    <button
+                      onClick={() => {
+                        const d = new Date(selectedDate);
+                        d.setDate(d.getDate() + 7);
+                        setSelectedDate(d);
+                      }}
+                      className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 transition"
+                      title="Próxima semana"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <span className="text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 font-mono">
+                    {weekStartStr} — {weekEndStr}
+                  </span>
+                </div>
+              )}
+
+              {agendaViewMode === 'dia' && (
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-1 bg-white border border-slate-200 rounded-xl p-1 shadow-2xs">
+                    <button
+                      onClick={() => {
+                        const d = new Date(selectedDate);
+                        d.setDate(d.getDate() - 1);
+                        setSelectedDate(d);
+                      }}
+                      className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 transition"
+                      title="Dia anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setSelectedDate(new Date())}
+                      className="px-3 py-1 text-xs font-bold text-teal-800 hover:bg-teal-50 rounded-lg transition"
+                    >
+                      Hoje
+                    </button>
+                    <button
+                      onClick={() => {
+                        const d = new Date(selectedDate);
+                        d.setDate(d.getDate() + 1);
+                        setSelectedDate(d);
+                      }}
+                      className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 transition"
+                      title="Próximo dia"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
                   <input
                     type="date"
-                    value={filterDate}
-                    onChange={(e) => setFilterDate(e.target.value)}
-                    className="medical-input px-3 py-1.5 rounded-lg text-xs font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">Status da Consulta</label>
-                  <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="medical-input px-3 py-1.5 rounded-lg text-xs font-medium"
-                  >
-                    <option value="ALL">Todos os Status</option>
-                    <option value="SCHEDULED">SCHEDULED (Agendados)</option>
-                    <option value="CONFIRMED">CONFIRMED (Confirmados)</option>
-                    <option value="RESCHEDULED">RESCHEDULED (Remarcados)</option>
-                    <option value="CANCELED">CANCELED (Cancelados)</option>
-                  </select>
-                </div>
-                {(filterDate || filterStatus !== 'ALL') && (
-                  <button
-                    onClick={() => {
-                      setFilterDate('');
-                      setFilterStatus('ALL');
+                    value={selectedDate.toISOString().slice(0, 10)}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const [y, m, d] = e.target.value.split('-').map(Number);
+                        setSelectedDate(new Date(y, m - 1, d));
+                      }
                     }}
-                    className="mt-5 text-xs text-teal-700 hover:underline font-semibold"
-                  >
-                    Limpar Filtros
-                  </button>
-                )}
-              </div>
+                    className="medical-input px-3 py-1 rounded-xl text-xs font-medium"
+                  />
+                  <span className="text-xs font-bold text-slate-800 capitalize">
+                    {selectedDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
+                  </span>
+                </div>
+              )}
+
+              {agendaViewMode === 'lista' && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <div>
+                    <input
+                      type="date"
+                      value={filterDate}
+                      onChange={(e) => setFilterDate(e.target.value)}
+                      className="medical-input px-3 py-1.5 rounded-lg text-xs font-medium"
+                    />
+                  </div>
+                  <div>
+                    <select
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value)}
+                      className="medical-input px-3 py-1.5 rounded-lg text-xs font-medium bg-white"
+                    >
+                      <option value="ALL">Todos os Status</option>
+                      <option value="SCHEDULED">SCHEDULED (Agendados)</option>
+                      <option value="CONFIRMED">CONFIRMED (Confirmados)</option>
+                      <option value="RESCHEDULED">RESCHEDULED (Remarcados)</option>
+                      <option value="CANCELED">CANCELED (Cancelados)</option>
+                    </select>
+                  </div>
+                  {(filterDate || filterStatus !== 'ALL') && (
+                    <button
+                      onClick={() => {
+                        setFilterDate('');
+                        setFilterStatus('ALL');
+                      }}
+                      className="text-xs text-teal-700 hover:underline font-semibold"
+                    >
+                      Limpar Filtros
+                    </button>
+                  )}
+                </div>
+              )}
 
               <button
                 onClick={fetchData}
                 className="flex items-center px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 transition"
               >
                 <RefreshCw className="h-3.5 w-3.5 mr-1.5 text-slate-500" />
-                Atualizar Lista
+                Atualizar
               </button>
             </div>
 
-            {/* TABELA DE AGENDAMENTOS */}
+            {/* VIZUALIZAÇÃO 1: VISÃO SEMANAL (7 DIAS) */}
+            {agendaViewMode === 'semana' && (
+              <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+                {weekDays.map((dayDate, idx) => {
+                  const isToday = dayDate.toDateString() === new Date().toDateString();
+                  const dayAppts = appointments.filter((a) => {
+                    const apptDate = new Date(a.startTime);
+                    return (
+                      apptDate.getFullYear() === dayDate.getFullYear() &&
+                      apptDate.getMonth() === dayDate.getMonth() &&
+                      apptDate.getDate() === dayDate.getDate()
+                    );
+                  }).sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`medical-card rounded-2xl flex flex-col border transition ${
+                        isToday ? 'border-teal-500 ring-2 ring-teal-500/20 bg-teal-50/10' : 'border-slate-200'
+                      }`}
+                    >
+                      {/* HEADER DO DIA */}
+                      <div className={`p-3 border-b text-center rounded-t-2xl ${isToday ? 'bg-teal-700 text-white' : 'bg-slate-100/90 text-slate-800'}`}>
+                        <p className="text-[11px] font-bold uppercase tracking-wider">{WEEKDAY_NAMES[idx]}</p>
+                        <p className={`text-base font-extrabold ${isToday ? 'text-white' : 'text-slate-900'}`}>
+                          {dayDate.getDate()} {dayDate.toLocaleDateString('pt-BR', { month: 'short' })}
+                        </p>
+                        {isToday && (
+                          <span className="inline-block mt-0.5 px-2 py-0.2 text-[9px] font-extrabold bg-white text-teal-800 rounded-full">
+                            Hoje
+                          </span>
+                        )}
+                      </div>
+
+                      {/* LISTA DE CONSULTAS DO DIA */}
+                      <div className="p-2 flex-1 space-y-2 min-h-[360px] overflow-y-auto">
+                        {dayAppts.length === 0 ? (
+                          <div className="h-full flex flex-col items-center justify-center text-center p-4 text-slate-400">
+                            <p className="text-xs font-medium">Sem consultas</p>
+                            <button
+                              onClick={() => openNewApptModalWithSlot(dayDate)}
+                              className="mt-2 text-[10px] text-teal-700 hover:text-teal-900 font-bold underline flex items-center"
+                            >
+                              <Plus className="h-3 w-3 mr-0.5" /> Agendar
+                            </button>
+                          </div>
+                        ) : (
+                          dayAppts.map((appt) => {
+                            const timeStr = new Date(appt.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                            return (
+                              <div
+                                key={appt.id}
+                                className={`p-2.5 rounded-xl border text-xs space-y-1 shadow-xs transition hover:scale-[1.02] ${
+                                  appt.status === 'CONFIRMED'
+                                    ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
+                                    : appt.status === 'SCHEDULED'
+                                    ? 'bg-sky-50/90 border-sky-200 text-sky-950'
+                                    : appt.status === 'RESCHEDULED'
+                                    ? 'bg-amber-50/90 border-amber-200 text-amber-950'
+                                    : 'bg-rose-50/90 border-rose-200 text-rose-950'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between font-bold">
+                                  <span className="text-[11px] font-mono flex items-center">
+                                    <Clock className="h-3 w-3 mr-1 text-slate-500" />
+                                    {timeStr}
+                                  </span>
+                                  <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-extrabold bg-white/80 border border-slate-200">
+                                    {appt.status}
+                                  </span>
+                                </div>
+                                <div className="font-bold text-slate-900 truncate" title={appt.patient?.name}>
+                                  {appt.patient?.name}
+                                </div>
+                                <div className="text-[10px] text-slate-600 font-mono">
+                                  {formatPhoneBR(appt.patient?.phone)}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* BOTÃO ADICIONAR RÁPIDO */}
+                      <div className="p-2 border-t border-slate-100 text-center">
+                        <button
+                          onClick={() => openNewApptModalWithSlot(dayDate)}
+                          className="w-full py-1.5 px-2 rounded-xl bg-slate-100 hover:bg-teal-50 text-slate-700 hover:text-teal-800 text-[11px] font-bold transition flex items-center justify-center"
+                        >
+                          <Plus className="h-3.5 w-3.5 mr-1 text-teal-600" /> Novo Slot
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* VIZUALIZAÇÃO 2: VISÃO DIÁRIA (GRADE POR HORÁRIO HORA A HORA) */}
+            {agendaViewMode === 'dia' && (
+              <div className="medical-card rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
+                <div className="bg-slate-100/90 px-6 py-3 border-b border-slate-200 flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <CalendarDays className="h-5 w-5 text-teal-600" />
+                    <h3 className="font-bold text-slate-900 text-sm">
+                      Agenda Diária — {selectedDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+                    </h3>
+                  </div>
+                  <span className="text-xs text-slate-500 font-medium">
+                    Expediente: 08:00 às 18:00
+                  </span>
+                </div>
+
+                <div className="divide-y divide-slate-200">
+                  {DAILY_HOURS.map((hourStr) => {
+                    const slotHour = parseInt(hourStr.split(':')[0]);
+                    const hourAppts = appointments.filter((a) => {
+                      const apptDate = new Date(a.startTime);
+                      return (
+                        apptDate.getFullYear() === selectedDate.getFullYear() &&
+                        apptDate.getMonth() === selectedDate.getMonth() &&
+                        apptDate.getDate() === selectedDate.getDate() &&
+                        apptDate.getHours() === slotHour
+                      );
+                    });
+
+                    return (
+                      <div key={hourStr} className="flex flex-col sm:flex-row items-stretch hover:bg-slate-50/60 transition min-h-[72px]">
+                        {/* COLUNA DO HORÁRIO */}
+                        <div className="w-full sm:w-28 bg-slate-50 p-4 border-r border-slate-200 flex items-center justify-center font-mono text-xs font-bold text-slate-700">
+                          <Clock className="h-3.5 w-3.5 mr-1.5 text-teal-600" />
+                          {hourStr}
+                        </div>
+
+                        {/* CONTEÚDO DO SLOT */}
+                        <div className="flex-1 p-3 flex items-center">
+                          {hourAppts.length === 0 ? (
+                            <div className="w-full flex items-center justify-between">
+                              <span className="text-xs text-slate-400 italic">Horário Livre</span>
+                              <button
+                                onClick={() => openNewApptModalWithSlot(selectedDate, hourStr)}
+                                className="px-3 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-bold transition flex items-center border border-teal-200/80"
+                              >
+                                <Plus className="h-3.5 w-3.5 mr-1 text-teal-600" /> Agendar às {hourStr}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {hourAppts.map((appt) => (
+                                <div
+                                  key={appt.id}
+                                  className={`p-3 rounded-xl border flex items-center justify-between text-xs shadow-2xs ${
+                                    appt.status === 'CONFIRMED'
+                                      ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                                      : appt.status === 'SCHEDULED'
+                                      ? 'bg-sky-50 border-sky-200 text-sky-950'
+                                      : appt.status === 'RESCHEDULED'
+                                      ? 'bg-amber-50 border-amber-200 text-amber-950'
+                                      : 'bg-rose-50 border-rose-200 text-rose-950'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="font-bold text-slate-900 text-sm">{appt.patient?.name}</div>
+                                    <div className="text-[11px] text-slate-600 font-mono mt-0.5">
+                                      {formatPhoneBR(appt.patient?.phone)}
+                                    </div>
+                                    {appt.notes && (
+                                      <p className="text-[10px] text-slate-500 mt-1 italic">
+                                        Obs: {appt.notes}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  <div className="text-right space-y-1">
+                                    <span
+                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border inline-block ${
+                                        appt.status === 'CONFIRMED'
+                                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                          : appt.status === 'SCHEDULED'
+                                          ? 'bg-sky-100 text-sky-800 border-sky-300'
+                                          : appt.status === 'RESCHEDULED'
+                                          ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                          : 'bg-rose-100 text-rose-800 border-rose-300'
+                                      }`}
+                                    >
+                                      {appt.status}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* VIZUALIZAÇÃO 3: VISÃO EM LISTA (TABELA TRADICIONAL) */}
+            {agendaViewMode === 'lista' && (
+              <div className="medical-card rounded-2xl overflow-hidden border border-slate-200 shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="p-4 uppercase tracking-wider text-[11px]">Horário / Data</th>
+                        <th className="p-4 uppercase tracking-wider text-[11px]">Paciente</th>
+                        <th className="p-4 uppercase tracking-wider text-[11px]">Telefone</th>
+                        <th className="p-4 uppercase tracking-wider text-[11px]">Status</th>
+                        <th className="p-4 uppercase tracking-wider text-[11px]">Observações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {loading ? (
+                        <tr>
+                          <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">
+                            Carregando agendamentos...
+                          </td>
+                        </tr>
+                      ) : appointments.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-8 text-center text-slate-500 font-medium">
+                            Nenhum agendamento encontrado para os filtros selecionados.
+                          </td>
+                        </tr>
+                      ) : (
+                        appointments.map((appt) => {
+                          const start = new Date(appt.startTime);
+                          const dateFormatted = start.toLocaleDateString('pt-BR', {
+                            weekday: 'short',
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                          });
+                          const timeFormatted = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                          return (
+                            <tr key={appt.id} className="hover:bg-slate-50/80 transition">
+                              <td className="p-4 font-semibold text-slate-900">
+                                <div className="text-slate-900 font-bold text-sm">{timeFormatted}</div>
+                                <div className="text-[11px] text-slate-500 font-medium">{dateFormatted}</div>
+                              </td>
+                              <td className="p-4">
+                                <div className="font-bold text-slate-800">{appt.patient?.name}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">ID: {appt.patient?.id.slice(0, 8)}</div>
+                              </td>
+                              <td className="p-4 text-slate-700 font-mono font-medium">{formatPhoneBR(appt.patient?.phone)}</td>
+                              <td className="p-4">
+                                <span
+                                  className={`px-3 py-1 rounded-full text-[11px] font-bold border inline-flex items-center ${
+                                    appt.status === 'CONFIRMED'
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                      : appt.status === 'SCHEDULED'
+                                      ? 'bg-sky-50 text-sky-800 border-sky-200'
+                                      : appt.status === 'RESCHEDULED'
+                                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                      : 'bg-rose-50 text-rose-800 border-rose-200'
+                                  }`}
+                                >
+                                  {appt.status === 'CONFIRMED' && <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-600" />}
+                                  {appt.status === 'SCHEDULED' && <Clock className="h-3.5 w-3.5 mr-1 text-sky-600" />}
+                                  {appt.status === 'RESCHEDULED' && <RefreshCw className="h-3.5 w-3.5 mr-1 text-amber-600" />}
+                                  {appt.status === 'CANCELED' && <CalendarX className="h-3.5 w-3.5 mr-1 text-rose-600" />}
+                                  {appt.status}
+                                </span>
+                              </td>
+                              <td className="p-4 text-slate-600 text-[11px] font-medium leading-relaxed">
+                                {appt.notes || 'Sem observações'}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ABA 2: CADASTRO DE USUÁRIOS */}
+        {activeTab === 'users' && (
+          <div className="space-y-6">
+            {/* TOPO: BARRA DE PESQUISA, FILTROS E BOTÃO ADICIONAR */}
+            <div className="medical-card p-5 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
+              <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                <div className="relative w-full sm:w-72">
+                  <Search className="h-4 w-4 absolute left-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por nome, e-mail ou especialidade..."
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    className="medical-input w-full pl-9 pr-3.5 py-2 rounded-xl text-xs font-medium"
+                  />
+                </div>
+
+                <select
+                  value={userRoleFilter}
+                  onChange={(e) => setUserRoleFilter(e.target.value)}
+                  className="medical-input px-3.5 py-2 rounded-xl text-xs font-medium bg-white border border-slate-200"
+                >
+                  <option value="ALL">Todos os Cargos</option>
+                  <option value="MEDICO">Médicos</option>
+                  <option value="RECEPCIONISTA">Recepcionistas</option>
+                  <option value="ADMIN">Administradores</option>
+                </select>
+              </div>
+
+              <button
+                onClick={() => handleOpenUserModal()}
+                className="flex items-center px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs transition shadow-md shadow-teal-700/15 w-full sm:w-auto justify-center"
+              >
+                <UserPlus className="h-4 w-4 mr-1.5 stroke-[2.5]" />
+                Cadastrar Usuário
+              </button>
+            </div>
+
+            {/* TABELA DE USUÁRIOS */}
             <div className="medical-card rounded-2xl overflow-hidden border border-slate-200 shadow-xs">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200">
                     <tr>
-                      <th className="p-4 uppercase tracking-wider text-[11px]">Horário / Data</th>
-                      <th className="p-4 uppercase tracking-wider text-[11px]">Paciente</th>
-                      <th className="p-4 uppercase tracking-wider text-[11px]">Telefone (WhatsApp)</th>
+                      <th className="p-4 uppercase tracking-wider text-[11px]">Usuário / Nome</th>
+                      <th className="p-4 uppercase tracking-wider text-[11px]">E-mail</th>
+                      <th className="p-4 uppercase tracking-wider text-[11px]">Telefone</th>
+                      <th className="p-4 uppercase tracking-wider text-[11px]">Cargo / Especialidade</th>
                       <th className="p-4 uppercase tracking-wider text-[11px]">Status</th>
-                      <th className="p-4 uppercase tracking-wider text-[11px]">Observações</th>
+                      <th className="p-4 uppercase tracking-wider text-[11px] text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {loading ? (
+                    {loadingUsers ? (
                       <tr>
-                        <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">
-                          Carregando agendamentos...
+                        <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
+                          Carregando usuários...
                         </td>
                       </tr>
-                    ) : appointments.length === 0 ? (
+                    ) : filteredUsers.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="p-8 text-center text-slate-500 font-medium">
-                          Nenhum agendamento encontrado para os filtros selecionados.
+                        <td colSpan={6} className="p-8 text-center text-slate-500 font-medium">
+                          Nenhum usuário cadastrado.
                         </td>
                       </tr>
                     ) : (
-                      appointments.map((appt) => {
-                        const start = new Date(appt.startTime);
-                        const dateFormatted = start.toLocaleDateString('pt-BR', {
-                          weekday: 'short',
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                        });
-                        const timeFormatted = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                        return (
-                          <tr key={appt.id} className="hover:bg-slate-50/80 transition">
-                            <td className="p-4 font-semibold text-slate-900">
-                              <div className="text-slate-900 font-bold text-sm">{timeFormatted}</div>
-                              <div className="text-[11px] text-slate-500 font-medium">{dateFormatted}</div>
-                            </td>
-                            <td className="p-4">
-                              <div className="font-bold text-slate-800">{appt.patient?.name}</div>
-                              <div className="text-[10px] text-slate-400 font-mono">ID: {appt.patient?.id.slice(0, 8)}</div>
-                            </td>
-                            <td className="p-4 text-slate-700 font-mono font-medium">{formatPhoneBR(appt.patient?.phone)}</td>
-                            <td className="p-4">
+                      filteredUsers.map((u) => (
+                        <tr key={u.id} className="hover:bg-slate-50/80 transition">
+                          <td className="p-4">
+                            <div className="flex items-center space-x-3">
+                              <div className="h-9 w-9 rounded-full bg-teal-100 text-teal-800 flex items-center justify-center font-bold text-xs">
+                                {u.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-900 text-xs">{u.name}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">ID: {u.id.slice(0, 8)}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-4 font-medium text-slate-700">
+                            <div className="flex items-center space-x-1.5">
+                              <Mail className="h-3.5 w-3.5 text-slate-400" />
+                              <span>{u.email}</span>
+                            </div>
+                          </td>
+                          <td className="p-4 font-mono font-medium text-slate-700">
+                            {formatPhoneBR(u.phone) || '—'}
+                          </td>
+                          <td className="p-4">
+                            <div className="space-y-0.5">
                               <span
-                                className={`px-3 py-1 rounded-full text-[11px] font-bold border inline-flex items-center ${
-                                  appt.status === 'CONFIRMED'
-                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                    : appt.status === 'SCHEDULED'
-                                    ? 'bg-sky-50 text-sky-800 border-sky-200'
-                                    : appt.status === 'RESCHEDULED'
-                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                    : 'bg-rose-50 text-rose-800 border-rose-200'
+                                className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold border inline-block ${
+                                  u.role === 'MEDICO'
+                                    ? 'bg-teal-50 text-teal-800 border-teal-200'
+                                    : u.role === 'ADMIN'
+                                    ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                    : 'bg-sky-50 text-sky-800 border-sky-200'
                                 }`}
                               >
-                                {appt.status === 'CONFIRMED' && <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-600" />}
-                                {appt.status === 'SCHEDULED' && <Clock className="h-3.5 w-3.5 mr-1 text-sky-600" />}
-                                {appt.status === 'RESCHEDULED' && <RefreshCw className="h-3.5 w-3.5 mr-1 text-amber-600" />}
-                                {appt.status === 'CANCELED' && <CalendarX className="h-3.5 w-3.5 mr-1 text-rose-600" />}
-                                {appt.status}
+                                {u.role === 'MEDICO' && 'MÉDICO(A)'}
+                                {u.role === 'ADMIN' && 'ADMINISTRADOR'}
+                                {u.role === 'RECEPCIONISTA' && 'RECEPCIONISTA'}
                               </span>
-                            </td>
-                            <td className="p-4 text-slate-600 text-[11px] font-medium leading-relaxed">
-                              {appt.notes || 'Sem observações'}
-                            </td>
-                          </tr>
-                        );
-                      })
+                              {u.specialty && (
+                                <p className="text-[11px] text-slate-500 font-medium">{u.specialty}</p>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <button
+                              onClick={() => handleToggleUserStatus(u)}
+                              className={`px-3 py-1 rounded-full text-[10px] font-bold border inline-flex items-center cursor-pointer transition ${
+                                u.status === 'ACTIVE'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                                  : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                              }`}
+                            >
+                              <span
+                                className={`h-2 w-2 rounded-full mr-1.5 ${
+                                  u.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-slate-400'
+                                }`}
+                              ></span>
+                              {u.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
+                            </button>
+                          </td>
+                          <td className="p-4 text-right space-x-2">
+                            <button
+                              onClick={() => handleOpenUserModal(u)}
+                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-teal-50 text-slate-600 hover:text-teal-800 transition"
+                              title="Editar Usuário"
+                            >
+                              <Edit3 className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteUser(u.id)}
+                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 transition"
+                              title="Excluir Usuário"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
                     )}
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
-        )}
-
-        {/* ABA 2: SIMULADOR DE WHATSAPP IA + INSPECTOR DE TOOL CALLING */}
-        {activeTab === 'simulator' && (
-          <div className="space-y-6">
-            {/* CARD DE INTEGRAÇÃO DO WEBHOOK REAL */}
-            <div className="medical-card rounded-2xl p-5 border border-teal-200 bg-gradient-to-r from-teal-50 to-emerald-50 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="space-y-1 max-w-3xl">
-                <div className="flex items-center space-x-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <h3 className="text-sm font-bold text-slate-900">Endereço do Webhook para WhatsApp Real</h3>
-                  <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-md">
-                    Pronto para Produção
-                  </span>
-                </div>
-                <p className="text-xs text-slate-600 font-medium">
-                  Cole este endereço no campo de Webhook da sua <strong>Evolution API</strong> ou <strong>Z-API</strong> para receber mensagens reais de pacientes enviadas diretamente pelo celular:
-                </p>
-                <div className="flex items-center space-x-2 pt-1.5">
-                  <code className="px-3 py-1.5 rounded-xl bg-white border border-teal-200 text-teal-900 font-mono text-xs font-bold shadow-xs">
-                    {typeof window !== 'undefined' ? `${window.location.origin}/api/webhooks/whatsapp` : 'https://portalclassic21.com/api/webhooks/whatsapp'}
-                  </code>
-                  <button
-                    onClick={handleCopyWebhook}
-                    className="flex items-center px-3.5 py-1.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs transition shadow-sm"
-                  >
-                    {copiedWebhook ? (
-                      <>
-                        <Check className="h-3.5 w-3.5 mr-1.5 text-emerald-300" /> Copiado!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3.5 w-3.5 mr-1.5" /> Copiar Webhook
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* CHAT WHATSAPP TEMA CLARO E AGRADÁVEL (7 COLS) */}
-            <div className="lg:col-span-7 medical-card rounded-2xl overflow-hidden flex flex-col h-[650px] border border-slate-200 shadow-md">
-              {/* CHAT HEADER WHATSAPP AMIGÁVEL */}
-              <div className="bg-teal-700 px-4 py-3 text-white flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="relative">
-                    <div className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-sm backdrop-blur-xs">
-                      <MessageSquare className="h-5 w-5" />
-                    </div>
-                    <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-400 border-2 border-teal-700"></span>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white">Simulador WhatsApp - CliniDesk</h3>
-                    <p className="text-[11px] text-teal-100 flex items-center font-medium">
-                      <span className="font-mono text-white mr-1.5 font-bold">{simPhone}</span> • Atendimento Automático IA
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="text"
-                    value={simPhone}
-                    onChange={(e) => setSimPhone(applyPhoneMask(e.target.value))}
-                    className="bg-white/10 text-white placeholder-teal-200 border border-white/20 px-2.5 py-1 rounded-lg text-[11px] font-mono w-32 focus:outline-none"
-                    title="Telefone do Paciente em Simulação"
-                  />
-                  <button
-                    onClick={() => {
-                      setChatLog([
-                        {
-                          sender: 'assistant',
-                          text: 'Olá! Sou a assistente virtual da clínica. Como posso ajudar com a sua consulta hoje?',
-                          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        },
-                      ]);
-                      setLastToolsExecuted([]);
-                    }}
-                    className="p-1.5 rounded-lg text-teal-100 hover:text-white hover:bg-white/10 transition"
-                    title="Reiniciar conversa"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* CHAT BODY */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#e5ddd5]/30">
-                {chatLog.map((msg, index) => (
-                  <div
-                    key={index}
-                    className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
-                  >
-                    <div
-                      className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-xs shadow-xs ${
-                        msg.sender === 'user'
-                          ? 'bg-emerald-700 text-white rounded-br-none font-medium'
-                          : 'bg-white text-slate-800 border border-slate-200/80 rounded-bl-none font-medium'
-                      }`}
-                    >
-                      <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
-                      <span className={`block text-[9px] text-right mt-1 font-mono ${msg.sender === 'user' ? 'text-emerald-100' : 'text-slate-400'}`}>
-                        {msg.time}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                {simulating && (
-                  <div className="flex items-center space-x-2 text-xs text-teal-700 bg-teal-50 p-2.5 rounded-xl border border-teal-200 font-semibold w-fit">
-                    <Sparkles className="h-4 w-4 animate-spin text-teal-600" />
-                    <span>IA consultando agenda e gerando resposta...</span>
-                  </div>
-                )}
-              </div>
-
-              {/* CENÁRIOS DE ATALHO */}
-              <div className="bg-slate-50 border-t border-slate-200 p-2.5 flex items-center gap-2 overflow-x-auto text-[11px]">
-                <span className="text-slate-500 font-bold text-[10px] whitespace-nowrap uppercase tracking-wider">
-                  Testes Rápidos:
-                </span>
-                <button
-                  onClick={() => handleSendSimulatedMessage('Olá, tenho alguma consulta agendada?')}
-                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 font-semibold whitespace-nowrap transition border border-slate-300 shadow-2xs"
-                >
-                  🔍 Buscar Minha Consulta
-                </button>
-                <button
-                  onClick={() => handleSendSimulatedMessage('Gostaria de ver horários vagos para quarta-feira')}
-                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 font-semibold whitespace-nowrap transition border border-slate-300 shadow-2xs"
-                >
-                  📅 Horários Disponíveis
-                </button>
-                <button
-                  onClick={() => handleSendSimulatedMessage('Pode me remarcar para quarta-feira às 09h? Sim, confirmo!')}
-                  className="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold whitespace-nowrap transition border border-teal-200 shadow-2xs"
-                >
-                  ✅ Confirmar Remarcação
-                </button>
-                <button
-                  onClick={() => handleSendSimulatedMessage('Quero cancelar minha consulta de amanhã')}
-                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 font-semibold whitespace-nowrap transition border border-slate-300 shadow-2xs"
-                >
-                  ❌ Cancelar Consulta
-                </button>
-                <button
-                  onClick={() => handleSendSimulatedMessage('Estou sentindo muita dor forte no peito e falta de ar')}
-                  className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold whitespace-nowrap transition border border-rose-200 shadow-2xs"
-                >
-                  🚨 Transbordo Emergência
-                </button>
-              </div>
-
-              {/* CHAT INPUT */}
-              <div className="bg-white p-3 border-t border-slate-200 flex items-center space-x-2">
-                <input
-                  type="text"
-                  placeholder="Digite como se fosse o paciente no WhatsApp..."
-                  value={simMessage}
-                  onChange={(e) => setSimMessage(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSendSimulatedMessage()}
-                  className="flex-1 medical-input px-3.5 py-2 rounded-xl text-xs font-medium"
-                />
-                <button
-                  onClick={() => handleSendSimulatedMessage()}
-                  disabled={simulating || !simMessage.trim()}
-                  className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl font-bold text-xs transition flex items-center shadow-md shadow-teal-700/15 disabled:opacity-50"
-                >
-                  <Send className="h-3.5 w-3.5 mr-1.5" />
-                  Enviar
-                </button>
-              </div>
-            </div>
-
-            {/* INSPECTOR DE FUNCTION CALLING / TOOL EXECUTIONS (5 COLS) */}
-            <div className="lg:col-span-5 medical-card rounded-2xl p-5 flex flex-col h-[650px] border border-slate-200 space-y-4 overflow-y-auto shadow-sm">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                <div className="flex items-center space-x-2">
-                  <Zap className="h-5 w-5 text-teal-600" />
-                  <h3 className="text-sm font-bold text-slate-900">Inspector de Tool Calling</h3>
-                </div>
-                <span className="text-[10px] bg-teal-50 text-teal-800 border border-teal-200 px-2.5 py-0.5 rounded-full font-bold font-mono">
-                  Structured Outputs
-                </span>
-              </div>
-
-              <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                Execução autônoma em tempo real das funções determinísticas acionadas pelo modelo de IA:
-              </p>
-
-              {lastToolsExecuted.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-slate-400 space-y-2">
-                  <Bot className="h-8 w-8 text-teal-600/50" />
-                  <p className="text-xs font-semibold text-slate-600">Nenhuma ferramenta acionada na última interação.</p>
-                  <p className="text-[11px] text-slate-400">
-                    Envie uma mensagem como <span className="text-teal-700 font-mono font-bold">"quais horários vagos?"</span> no simulador.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {lastToolsExecuted.map((tool, idx) => (
-                    <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-teal-800 font-mono flex items-center">
-                          <CheckCircle2 className="h-4 w-4 mr-1.5 text-emerald-600" />
-                          {tool.name}()
-                        </span>
-                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                          Sucesso
-                        </span>
-                      </div>
-
-                      {/* ARGUMENTOS */}
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                          Entrada (Parâmetros):
-                        </span>
-                        <pre className="bg-slate-900 p-2.5 rounded-lg text-[11px] font-mono text-teal-300 overflow-x-auto">
-                          {JSON.stringify(tool.args, null, 2)}
-                        </pre>
-                      </div>
-
-                      {/* RETORNO */}
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                          Retorno Determinístico:
-                        </span>
-                        <div className="bg-white p-3 rounded-lg border border-slate-200 text-[11px] text-slate-700 space-y-1">
-                          <p className="font-semibold text-emerald-800">{tool.result?.message}</p>
-                          {tool.result?.data && (
-                            <pre className="text-[10px] font-mono text-slate-500 mt-1 pt-1.5 border-t border-slate-100 overflow-x-auto">
-                              {JSON.stringify(tool.result.data, null, 2)}
-                            </pre>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
         )}
 
         {/* ABA 3: CONFIGURAÇÃO DE EXPEDIENTE & PARÂMETROS DA CLÍNICA */}
@@ -814,16 +1168,16 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* INSTRUÇÕES DO SYSTEM PROMPT E WHATSAPP */}
+              {/* INSTRUÇÕES DO SYSTEM PROMPT */}
               <div className="bg-teal-50/70 p-4.5 rounded-2xl border border-teal-200/80 space-y-2.5">
                 <h4 className="font-bold text-teal-900 text-xs flex items-center">
                   <ShieldCheck className="h-4 w-4 mr-1.5 text-teal-700" />
-                  Diretrizes de Segurança do Agente IA
+                  Diretrizes da Plataforma CliniDesk
                 </h4>
                 <ul className="list-disc list-inside text-teal-800 space-y-1 text-[11px] font-medium leading-relaxed">
-                  <li>O agente sempre consultará a grade médica oficial antes de prometer slots para o paciente.</li>
-                  <li>Cancelamentos com menos de <strong>{clinic.minCancelHours || 2} horas</strong> de antecedência serão direcionados para a recepção humana.</li>
-                  <li>Perguntas sobre diagnósticos médicos ativam o protocolo imediato de transbordo.</li>
+                  <li>O sistema consulta a grade médica oficial antes de permitir novos slots.</li>
+                  <li>Cancelamentos com menos de <strong>{clinic.minCancelHours || 2} horas</strong> de antecedência requerem autorização da recepção.</li>
+                  <li>Parâmetros de atendimento atualizados aplicam-se imediatamente ao controle de agendamentos.</li>
                 </ul>
               </div>
 
@@ -868,7 +1222,7 @@ export default function Dashboard() {
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Telefone (WhatsApp com DDD)</label>
+                <label className="block text-slate-700 font-bold mb-1">Telefone (com DDD)</label>
                 <input
                   type="text"
                   required
@@ -914,6 +1268,115 @@ export default function Dashboard() {
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-600/15"
                 >
                   Salvar Agendamento
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CADASTRO / EDIÇÃO DE USUÁRIO */}
+      {showModalUser && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="medical-card w-full max-w-md rounded-2xl p-6 border border-slate-200 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center">
+                <UserCog className="h-4 w-4 mr-1.5 text-teal-600" />
+                {editingUser ? 'Editar Usuário' : 'Novo Cadastro de Usuário'}
+              </h3>
+              <button onClick={() => setShowModalUser(false)} className="text-slate-400 hover:text-slate-700 font-bold">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveUser} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Nome Completo</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Dra. Juliana Lima"
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value)}
+                  className="medical-input w-full px-3.5 py-2 rounded-xl text-xs font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">E-mail Profissional</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="exemplo@clinidesk.com.br"
+                  value={userEmail}
+                  onChange={(e) => setUserEmail(e.target.value)}
+                  className="medical-input w-full px-3.5 py-2 rounded-xl text-xs font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Telefone / Celular</label>
+                  <input
+                    type="text"
+                    placeholder="(11) 99999-8888"
+                    value={userPhone}
+                    onChange={(e) => setUserPhone(applyPhoneMask(e.target.value))}
+                    className="medical-input w-full px-3.5 py-2 rounded-xl text-xs font-mono font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Cargo / Função</label>
+                  <select
+                    value={userRole}
+                    onChange={(e: any) => setUserRole(e.target.value)}
+                    className="medical-input w-full px-3.5 py-2 rounded-xl text-xs font-medium bg-white border border-slate-200"
+                  >
+                    <option value="MEDICO">Médico(a)</option>
+                    <option value="RECEPCIONISTA">Recepcionista</option>
+                    <option value="ADMIN">Administrador</option>
+                  </select>
+                </div>
+              </div>
+
+              {userRole === 'MEDICO' && (
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Especialidade / CRM</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Pediatria • CRM-SP 123456"
+                    value={userSpecialty}
+                    onChange={(e) => setUserSpecialty(e.target.value)}
+                    className="medical-input w-full px-3.5 py-2 rounded-xl text-xs font-medium"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Status da Conta</label>
+                <select
+                  value={userStatus}
+                  onChange={(e: any) => setUserStatus(e.target.value)}
+                  className="medical-input w-full px-3.5 py-2 rounded-xl text-xs font-medium bg-white border border-slate-200"
+                >
+                  <option value="ACTIVE">Ativo</option>
+                  <option value="INACTIVE">Inativo</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowModalUser(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-xs"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl font-bold text-xs shadow-md shadow-teal-700/15"
+                >
+                  {editingUser ? 'Salvar Alterações' : 'Cadastrar Usuário'}
                 </button>
               </div>
             </form>
