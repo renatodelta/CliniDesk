@@ -1479,6 +1479,115 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {/* SEÇÃO: GRADE DE EXPEDIENTE E HORÁRIO DE ALMOÇO POR DIA */}
+              <div className="space-y-3 pt-2 border-t border-slate-200">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center">
+                    <Clock className="h-4 w-4 mr-1.5 text-teal-600" />
+                    Jornada de Trabalho e Intervalo de Almoço por Dia
+                  </h3>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Defina o horário de atendimento e pausa de refeição
+                  </span>
+                </div>
+
+                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                  <div className="bg-slate-100/90 px-4 py-2.5 text-slate-700 font-bold grid grid-cols-12 gap-2 text-[11px] uppercase tracking-wider">
+                    <div className="col-span-3">Dia da Semana</div>
+                    <div className="col-span-2">Atendimento</div>
+                    <div className="col-span-3">Horário de Trabalho</div>
+                    <div className="col-span-4">Intervalo de Almoço</div>
+                  </div>
+
+                  <div className="divide-y divide-slate-100 bg-white">
+                    {[
+                      { key: '1', label: 'Segunda-feira' },
+                      { key: '2', label: 'Terça-feira' },
+                      { key: '3', label: 'Quarta-feira' },
+                      { key: '4', label: 'Quinta-feira' },
+                      { key: '5', label: 'Sexta-feira' },
+                      { key: '6', label: 'Sábado' },
+                      { key: '0', label: 'Domingo' },
+                    ].map((day) => {
+                      const dayData = (clinic.workingHours && clinic.workingHours[day.key]) || {
+                        active: day.key !== '0' && day.key !== '6',
+                        start: '08:00',
+                        end: '18:00',
+                        lunchStart: '12:00',
+                        lunchEnd: '13:00',
+                      };
+
+                      const updateDayData = (field: string, val: any) => {
+                        const updatedWorkingHours = {
+                          ...(clinic.workingHours || {}),
+                          [day.key]: {
+                            ...dayData,
+                            [field]: val,
+                          },
+                        };
+                        setClinic({ ...clinic, workingHours: updatedWorkingHours });
+                      };
+
+                      return (
+                        <div key={day.key} className="p-3 grid grid-cols-12 gap-2 items-center text-xs hover:bg-slate-50/70 transition">
+                          <div className="col-span-3 font-bold text-slate-800">{day.label}</div>
+                          
+                          <div className="col-span-2">
+                            <label className="inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={dayData.active}
+                                onChange={(e) => updateDayData('active', e.target.checked)}
+                                className="rounded text-teal-600 focus:ring-teal-500 h-4 w-4"
+                              />
+                              <span className={`ml-2 text-xs font-bold ${dayData.active ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                {dayData.active ? 'Ativo' : 'Folga'}
+                              </span>
+                            </label>
+                          </div>
+
+                          <div className="col-span-3 flex items-center space-x-1.5">
+                            <input
+                              type="time"
+                              disabled={!dayData.active}
+                              value={dayData.start || '08:00'}
+                              onChange={(e) => updateDayData('start', e.target.value)}
+                              className="medical-input px-2 py-1 rounded-lg text-xs font-medium w-24 disabled:opacity-40 bg-white"
+                            />
+                            <span className="text-slate-400 font-bold">às</span>
+                            <input
+                              type="time"
+                              disabled={!dayData.active}
+                              value={dayData.end || '18:00'}
+                              onChange={(e) => updateDayData('end', e.target.value)}
+                              className="medical-input px-2 py-1 rounded-lg text-xs font-medium w-24 disabled:opacity-40 bg-white"
+                            />
+                          </div>
+
+                          <div className="col-span-4 flex items-center space-x-1.5">
+                            <input
+                              type="time"
+                              disabled={!dayData.active}
+                              value={dayData.lunchStart || '12:00'}
+                              onChange={(e) => updateDayData('lunchStart', e.target.value)}
+                              className="medical-input px-2 py-1 rounded-lg text-xs font-medium w-24 disabled:opacity-40 bg-white"
+                            />
+                            <span className="text-slate-400 font-bold">às</span>
+                            <input
+                              type="time"
+                              disabled={!dayData.active}
+                              value={dayData.lunchEnd || '13:00'}
+                              onChange={(e) => updateDayData('lunchEnd', e.target.value)}
+                              className="medical-input px-2 py-1 rounded-lg text-xs font-medium w-24 disabled:opacity-40 bg-white"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
               {/* INSTRUÇÕES DO SYSTEM PROMPT */}
               <div className="bg-teal-50/70 p-4.5 rounded-2xl border border-teal-200/80 space-y-2.5">
                 <h4 className="font-bold text-teal-900 text-xs flex items-center">
@@ -1486,7 +1595,7 @@ export default function Dashboard() {
                   Diretrizes da Plataforma CliniDesk
                 </h4>
                 <ul className="list-disc list-inside text-teal-800 space-y-1 text-[11px] font-medium leading-relaxed">
-                  <li>O sistema consulta a grade médica oficial antes de permitir novos slots.</li>
+                  <li>O sistema consulta a grade médica oficial configurada acima antes de permitir novos slots.</li>
                   <li>Cancelamentos com menos de <strong>{clinic.minCancelHours || 2} horas</strong> de antecedência requerem autorização da recepção.</li>
                   <li>Parâmetros de atendimento atualizados aplicam-se imediatamente ao controle de agendamentos.</li>
                 </ul>
