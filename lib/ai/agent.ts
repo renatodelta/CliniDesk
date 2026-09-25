@@ -157,7 +157,7 @@ function extractDateFromText(text: string): { dateStr: string; formattedStr: str
   const msgLower = text.toLowerCase().trim();
   const today = new Date();
 
-  // Match DD/MM/YY ou DD/MM/YYYY ou DD/MM
+  // 1. Match DD/MM/YY ou DD/MM/YYYY ou DD/MM
   const dateMatch = msgLower.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
   if (dateMatch) {
     const day = parseInt(dateMatch[1], 10);
@@ -170,6 +170,26 @@ function extractDateFromText(text: string): { dateStr: string; formattedStr: str
       const dateISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const formatted = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
       return { dateStr: dateISO, formattedStr: formatted };
+    }
+  }
+
+  // 2. Match por extenso tipo "25 de setembro de 2026" ou "25 de setembro"
+  const extensoMatch = msgLower.match(/\b(\d{1,2})\s+de\s+([a-zçáéíóú]+)(?:\s+de\s+(\d{4}))?\b/i);
+  if (extensoMatch) {
+    const day = parseInt(extensoMatch[1], 10);
+    const monthStr = extensoMatch[2].toLowerCase();
+    let year = extensoMatch[3] ? parseInt(extensoMatch[3], 10) : today.getFullYear();
+    const monthsMap: Record<string, number> = {
+      janeiro: 0, fevereiro: 1, marco: 2, março: 2, abril: 3, maio: 4, junho: 5,
+      julho: 6, agosto: 7, setembro: 8, outubro: 9, novembro: 10, dezembro: 11
+    };
+    if (monthsMap[monthStr] !== undefined) {
+      const d = new Date(year, monthsMap[monthStr], day);
+      if (!isNaN(d.getTime())) {
+        const dateISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const formatted = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+        return { dateStr: dateISO, formattedStr: formatted };
+      }
     }
   }
 
@@ -441,24 +461,44 @@ async function processWithFallbackIntelligence(
     }
   }
 
-  // 5. Confirmação de horário específico (ex: "09:00", "09:00h", "14:30")
+  // 5. Confirmação de horário específico (ex: "09:00", "09:00h", "16:15")
   const timeMatch = msgLower.match(/\b(\d{1,2})[:h](\d{2})?\b|\b(\d{1,2})h\b/);
   if (timeMatch) {
     const resAtual = await buscarConsultaAtual(patientPhone, clinicId);
     toolsExecuted.push({ name: 'buscar_consulta_atual', args: { telefone_paciente: patientPhone }, result: resAtual });
 
     if (resAtual.data?.appointmentId) {
-      // Buscar a última data consultada no histórico recente
-      let targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() + 1);
+      // Buscar a última data consultada de remarcação no histórico recente
+      let targetDateStr: string | null = null;
 
+      // 1. Procurar nas mensagens de horários disponíveis ou respostas de remarcação do histórico (do mais recente para o mais antigo)
       for (let i = history.length - 1; i >= 0; i--) {
-        const dateMatch = extractDateFromText(history[i].content);
-        if (dateMatch) {
-          const parts = dateMatch.dateStr.split('-');
-          targetDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-          break;
+        const msg = history[i].content;
+        if (msg.includes('Horários Disponíveis') || msg.includes('Remarcação') || msg.match(/\d{1,2}[\/\-]\d{1,2}/)) {
+          const dateMatch = extractDateFromText(msg);
+          if (dateMatch) {
+            targetDateStr = dateMatch.dateStr;
+            break;
+          }
         }
+      }
+
+      // 2. Fallback: procurar qualquer data no histórico se a busca acima falhar
+      if (!targetDateStr) {
+        for (let i = history.length - 1; i >= 0; i--) {
+          const dateMatch = extractDateFromText(history[i].content);
+          if (dateMatch) {
+            targetDateStr = dateMatch.dateStr;
+            break;
+          }
+        }
+      }
+
+      // 3. Se nenhuma data for encontrada no histórico, usar o dia de amanhã como fallback de segurança
+      if (!targetDateStr) {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        targetDateStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
       }
 
       let hour = 14;
@@ -469,9 +509,7 @@ async function processWithFallbackIntelligence(
 
       if (timeMatch[2]) min = parseInt(timeMatch[2], 10);
 
-      targetDate.setHours(hour, min, 0, 0);
-
-      const novaDataHoraStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')} ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+      const novaDataHoraStr = `${targetDateStr} ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
 
       const resRemarcar = await confirmarRemarcacao(resAtual.data.appointmentId, novaDataHoraStr);
       toolsExecuted.push({

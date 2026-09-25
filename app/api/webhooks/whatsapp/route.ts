@@ -108,12 +108,13 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 2. Carregar histórico recente de mensagens (últimas 10)
-    const recentMessages = await prisma.message.findMany({
+    // 2. Carregar histórico recente de mensagens (últimas 20 mais recentes)
+    const rawMessages = await prisma.message.findMany({
       where: { patientId: patient.id },
-      orderBy: { createdAt: 'asc' },
-      take: 10,
+      orderBy: { createdAt: 'desc' },
+      take: 20,
     });
+    const recentMessages = rawMessages.reverse();
 
     const history = recentMessages.map((m) => ({
       role: m.role as 'user' | 'assistant' | 'system' | 'tool',
