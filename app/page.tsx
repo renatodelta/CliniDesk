@@ -84,6 +84,30 @@ function calculateAge(birthDateStr?: string | null): string {
   return `${age} anos`;
 }
 
+function getStatusLabel(status: string | undefined | null): string {
+  if (!status) return 'Agendado';
+  const s = status.toUpperCase();
+  if (s === 'SCHEDULED' || s === 'AGENDADO') return 'Agendado';
+  if (s === 'CONFIRMED' || s === 'CONFIRMADO') return 'Confirmado';
+  if (s === 'RESCHEDULED' || s === 'REMARCADO') return 'Remarcado';
+  if (s === 'CANCELED' || s === 'CANCELADO') return 'Cancelado';
+  return status;
+}
+
+function getStatusBadgeStyle(status: string | undefined | null): string {
+  const s = (status || '').toUpperCase();
+  if (s === 'CONFIRMED' || s === 'CONFIRMADO') {
+    return 'bg-emerald-50 text-emerald-800 border-emerald-200';
+  }
+  if (s === 'SCHEDULED' || s === 'AGENDADO') {
+    return 'bg-sky-50 text-sky-800 border-sky-200';
+  }
+  if (s === 'RESCHEDULED' || s === 'REMARCADO') {
+    return 'bg-amber-50 text-amber-800 border-amber-200';
+  }
+  return 'bg-rose-50 text-rose-800 border-rose-200';
+}
+
 // Utilitários de data
 function getStartOfWeek(date: Date): Date {
   const d = new Date(date);
@@ -487,9 +511,9 @@ export default function Dashboard() {
 
   // Contadores KPIs
   const totalAppts = appointments.length;
-  const confirmedCount = appointments.filter((a) => a.status === 'CONFIRMED').length;
-  const rescheduledCount = appointments.filter((a) => a.status === 'RESCHEDULED').length;
-  const canceledCount = appointments.filter((a) => a.status === 'CANCELED').length;
+  const confirmedCount = appointments.filter((a) => a.status === 'CONFIRMADO' || a.status === 'CONFIRMED').length;
+  const rescheduledCount = appointments.filter((a) => a.status === 'REMARCADO' || a.status === 'RESCHEDULED').length;
+  const canceledCount = appointments.filter((a) => a.status === 'CANCELADO' || a.status === 'CANCELED').length;
 
   // Filtro de Pacientes
   const filteredPatients = patients.filter((p) => {
@@ -814,13 +838,13 @@ export default function Dashboard() {
                     <select
                       value={filterStatus}
                       onChange={(e) => setFilterStatus(e.target.value)}
-                      className="medical-input px-3 py-1.5 rounded-lg text-xs font-medium bg-white"
+                      className="medical-input px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-slate-200"
                     >
                       <option value="ALL">Todos os Status</option>
-                      <option value="SCHEDULED">SCHEDULED (Agendados)</option>
-                      <option value="CONFIRMED">CONFIRMED (Confirmados)</option>
-                      <option value="RESCHEDULED">RESCHEDULED (Remarcados)</option>
-                      <option value="CANCELED">CANCELED (Cancelados)</option>
+                      <option value="AGENDADO">Agendado</option>
+                      <option value="CONFIRMADO">Confirmado</option>
+                      <option value="REMARCADO">Remarcado</option>
+                      <option value="CANCELADO">Cancelado</option>
                     </select>
                   </div>
                   {(filterDate || filterStatus !== 'ALL') && (
@@ -898,23 +922,15 @@ export default function Dashboard() {
                             return (
                               <div
                                 key={appt.id}
-                                className={`p-2.5 rounded-xl border text-xs space-y-1 shadow-xs transition hover:scale-[1.02] ${
-                                  appt.status === 'CONFIRMED'
-                                    ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
-                                    : appt.status === 'SCHEDULED'
-                                    ? 'bg-sky-50/90 border-sky-200 text-sky-950'
-                                    : appt.status === 'RESCHEDULED'
-                                    ? 'bg-amber-50/90 border-amber-200 text-amber-950'
-                                    : 'bg-rose-50/90 border-rose-200 text-rose-950'
-                                }`}
+                                className={`p-2.5 rounded-xl border text-xs space-y-1 shadow-xs transition hover:scale-[1.02] ${getStatusBadgeStyle(appt.status)}`}
                               >
                                 <div className="flex items-center justify-between font-bold">
                                   <span className="text-[11px] font-mono flex items-center">
                                     <Clock className="h-3 w-3 mr-1 text-slate-500" />
                                     {timeStr}
                                   </span>
-                                  <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-extrabold bg-white/80 border border-slate-200">
-                                    {appt.status}
+                                  <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-extrabold bg-white/90 border border-slate-200">
+                                    {getStatusLabel(appt.status)}
                                   </span>
                                 </div>
                                 <div className="font-bold text-slate-900 truncate" title={appt.patient?.name}>
@@ -997,15 +1013,7 @@ export default function Dashboard() {
                               {hourAppts.map((appt) => (
                                 <div
                                   key={appt.id}
-                                  className={`p-3 rounded-xl border flex items-center justify-between text-xs shadow-2xs ${
-                                    appt.status === 'CONFIRMED'
-                                      ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
-                                      : appt.status === 'SCHEDULED'
-                                      ? 'bg-sky-50 border-sky-200 text-sky-950'
-                                      : appt.status === 'RESCHEDULED'
-                                      ? 'bg-amber-50 border-amber-200 text-amber-950'
-                                      : 'bg-rose-50 border-rose-200 text-rose-950'
-                                  }`}
+                                  className={`p-3 rounded-xl border flex items-center justify-between text-xs shadow-2xs ${getStatusBadgeStyle(appt.status)}`}
                                 >
                                   <div>
                                     <div className="font-bold text-slate-900 text-sm">{appt.patient?.name}</div>
@@ -1020,18 +1028,8 @@ export default function Dashboard() {
                                   </div>
 
                                   <div className="text-right space-y-1">
-                                    <span
-                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border inline-block ${
-                                        appt.status === 'CONFIRMED'
-                                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                          : appt.status === 'SCHEDULED'
-                                          ? 'bg-sky-100 text-sky-800 border-sky-300'
-                                          : appt.status === 'RESCHEDULED'
-                                          ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                          : 'bg-rose-100 text-rose-800 border-rose-300'
-                                      }`}
-                                    >
-                                      {appt.status}
+                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border inline-block bg-white/90 border-slate-200">
+                                      {getStatusLabel(appt.status)}
                                     </span>
                                   </div>
                                 </div>
@@ -1097,21 +1095,13 @@ export default function Dashboard() {
                               <td className="p-4 text-slate-700 font-mono font-medium">{formatPhoneBR(appt.patient?.phone)}</td>
                               <td className="p-4">
                                 <span
-                                  className={`px-3 py-1 rounded-full text-[11px] font-bold border inline-flex items-center ${
-                                    appt.status === 'CONFIRMED'
-                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                      : appt.status === 'SCHEDULED'
-                                      ? 'bg-sky-50 text-sky-800 border-sky-200'
-                                      : appt.status === 'RESCHEDULED'
-                                      ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                      : 'bg-rose-50 text-rose-800 border-rose-200'
-                                  }`}
+                                  className={`px-3 py-1 rounded-full text-[11px] font-bold border inline-flex items-center ${getStatusBadgeStyle(appt.status)}`}
                                 >
-                                  {appt.status === 'CONFIRMED' && <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-600" />}
-                                  {appt.status === 'SCHEDULED' && <Clock className="h-3.5 w-3.5 mr-1 text-sky-600" />}
-                                  {appt.status === 'RESCHEDULED' && <RefreshCw className="h-3.5 w-3.5 mr-1 text-amber-600" />}
-                                  {appt.status === 'CANCELED' && <CalendarX className="h-3.5 w-3.5 mr-1 text-rose-600" />}
-                                  {appt.status}
+                                  {(appt.status === 'CONFIRMADO' || appt.status === 'CONFIRMED') && <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-600" />}
+                                  {(appt.status === 'AGENDADO' || appt.status === 'SCHEDULED') && <Clock className="h-3.5 w-3.5 mr-1 text-sky-600" />}
+                                  {(appt.status === 'REMARCADO' || appt.status === 'RESCHEDULED') && <RefreshCw className="h-3.5 w-3.5 mr-1 text-amber-600" />}
+                                  {(appt.status === 'CANCELADO' || appt.status === 'CANCELED') && <CalendarX className="h-3.5 w-3.5 mr-1 text-rose-600" />}
+                                  {getStatusLabel(appt.status)}
                                 </span>
                               </td>
                               <td className="p-4 text-slate-600 text-[11px] font-medium leading-relaxed">

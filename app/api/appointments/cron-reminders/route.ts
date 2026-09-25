@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
           gte: now,
           lte: next24h,
         },
-        status: 'SCHEDULED',
+        status: { in: ['AGENDADO', 'SCHEDULED'] },
       },
       include: {
         patient: true,

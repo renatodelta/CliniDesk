@@ -76,7 +76,7 @@ async function main() {
       patientId: patient1.id,
       startTime: tomorrow,
       endTime: tomorrowEnd,
-      status: 'SCHEDULED',
+      status: 'AGENDADO',
       notes: 'Consulta de rotina cardiologia - Pressão Alta',
     },
   });
@@ -87,7 +87,7 @@ async function main() {
       patientId: patient2.id,
       startTime: dayAfterTomorrow,
       endTime: dayAfterTomorrowEnd,
-      status: 'CONFIRMED',
+      status: 'CONFIRMADO',
       notes: 'Retorno com exames de sangue',
     },
   });

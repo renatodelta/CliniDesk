@@ -23,7 +23,18 @@ export async function GET(req: NextRequest) {
     };
 
     if (status && status !== 'ALL') {
-      whereClause.status = status;
+      const upper = status.toUpperCase();
+      if (upper === 'AGENDADO' || upper === 'SCHEDULED') {
+        whereClause.status = { in: ['AGENDADO', 'SCHEDULED'] };
+      } else if (upper === 'CONFIRMADO' || upper === 'CONFIRMED') {
+        whereClause.status = { in: ['CONFIRMADO', 'CONFIRMED'] };
+      } else if (upper === 'REMARCADO' || upper === 'RESCHEDULED') {
+        whereClause.status = { in: ['REMARCADO', 'RESCHEDULED'] };
+      } else if (upper === 'CANCELADO' || upper === 'CANCELED') {
+        whereClause.status = { in: ['CANCELADO', 'CANCELED'] };
+      } else {
+        whereClause.status = status;
+      }
     }
 
     if (patientId) {
@@ -125,7 +136,7 @@ export async function POST(req: NextRequest) {
     const conflict = await prisma.appointment.findFirst({
       where: {
         clinicId: clinic.id,
-        status: { in: ['SCHEDULED', 'CONFIRMED'] },
+        status: { in: ['AGENDADO', 'CONFIRMADO', 'SCHEDULED', 'CONFIRMED'] },
         OR: [
           { startTime: { lte: start }, endTime: { gt: start } },
           { startTime: { lt: end }, endTime: { gte: end } },
@@ -146,7 +157,7 @@ export async function POST(req: NextRequest) {
         patientId: patient.id,
         startTime: start,
         endTime: end,
-        status: status || 'SCHEDULED',
+        status: status || 'AGENDADO',
         notes: notes || 'Agendamento manual criado pelo painel',
       },
       include: {

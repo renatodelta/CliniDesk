@@ -217,7 +217,7 @@ export async function buscarHorariosDisponiveis(
       where: {
         clinicId: clinic.id,
         startTime: { gte: startOfDay, lte: endOfDay },
-        status: { in: ['SCHEDULED', 'CONFIRMED'] },
+        status: { in: ['AGENDADO', 'CONFIRMADO', 'SCHEDULED', 'CONFIRMED'] },
       },
     });
 
@@ -313,7 +313,7 @@ export async function cancelarConsulta(agendamentoId: string, motivo?: string): 
       return { success: false, message: 'Agendamento não encontrado.' };
     }
 
-    if (appointment.status === 'CANCELED') {
+    if (appointment.status === 'CANCELADO' || appointment.status === 'CANCELED') {
       return { success: true, message: 'Esta consulta já estava cancelada.' };
     }
 
@@ -329,11 +329,11 @@ export async function cancelarConsulta(agendamentoId: string, motivo?: string): 
       };
     }
 
-    // Atualizar status para CANCELED
+    // Atualizar status para CANCELADO
     const updated = await prisma.appointment.update({
       where: { id: agendamentoId },
       data: {
-        status: 'CANCELED',
+        status: 'CANCELADO',
         notes: motivo ? `Cancelado via WhatsApp IA. Motivo: ${motivo}` : 'Cancelado via WhatsApp IA.',
       },
     });
@@ -393,7 +393,7 @@ export async function confirmarRemarcacao(
       where: {
         clinicId: oldAppointment.clinicId,
         patientId: { not: oldAppointment.patientId },
-        status: { in: ['SCHEDULED', 'CONFIRMED'] },
+        status: { in: ['AGENDADO', 'CONFIRMADO', 'SCHEDULED', 'CONFIRMED'] },
         OR: [
           {
             startTime: { lte: newStart },
@@ -417,26 +417,26 @@ export async function confirmarRemarcacao(
     const dataFormatada = formatBRT(newStart, true);
     const dataShortFormatada = formatBRTShort(newStart);
 
-    // 1. Atualizar TODOS os agendamentos anteriores do paciente com status SCHEDULED ou CONFIRMED para RESCHEDULED
+    // 1. Atualizar TODOS os agendamentos anteriores do paciente ativos para REMARCADO
     await prisma.appointment.updateMany({
       where: {
         patientId: oldAppointment.patientId,
-        status: { in: ['SCHEDULED', 'CONFIRMED'] },
+        status: { in: ['AGENDADO', 'CONFIRMADO', 'SCHEDULED', 'CONFIRMED'] },
       },
       data: {
-        status: 'RESCHEDULED',
+        status: 'REMARCADO',
         notes: `Remarcado para ${dataShortFormatada}`,
       },
     });
 
-    // 2. Criar novo agendamento com status SCHEDULED
+    // 2. Criar novo agendamento com status AGENDADO
     const newAppointment = await prisma.appointment.create({
       data: {
         clinicId: oldAppointment.clinicId,
         patientId: oldAppointment.patientId,
         startTime: newStart,
         endTime: newEnd,
-        status: 'SCHEDULED',
+        status: 'AGENDADO',
         notes: `Remarcado a partir do agendamento anterior #${oldAppointment.id.slice(0, 8)}`,
       },
     });
@@ -450,7 +450,7 @@ export async function confirmarRemarcacao(
         patientName: oldAppointment.patient.name,
         newStartTime: newStart.toISOString(),
         newEndTime: newEnd.toISOString(),
-        status: 'SCHEDULED',
+        status: 'AGENDADO',
       },
     };
   } catch (error: any) {
