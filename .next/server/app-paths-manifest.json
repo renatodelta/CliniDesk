@@ -1,11 +1,11 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
-  "/api/patients/route": "app/api/patients/route.js",
   "/api/users/route": "app/api/users/route.js",
+  "/api/patients/route": "app/api/patients/route.js",
   "/page": "app/page.js",
   "/api/appointments/cron-reminders/route": "app/api/appointments/cron-reminders/route.js",
-  "/api/clinic/settings/route": "app/api/clinic/settings/route.js",
   "/api/chat/simulate/route": "app/api/chat/simulate/route.js",
+  "/api/clinic/settings/route": "app/api/clinic/settings/route.js",
   "/api/appointments/route": "app/api/appointments/route.js",
   "/api/webhooks/whatsapp/route": "app/api/webhooks/whatsapp/route.js"
 }

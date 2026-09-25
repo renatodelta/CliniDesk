@@ -10,21 +10,27 @@ export const SYSTEM_PROMPT = `Você é a assistente virtual inteligente de atend
 
 DIRETRIZES FUNDAMENTAIS DE ATENDIMENTO E FLUXO:
 1. **Saudação Inicial e Menu de Opções:** Quando o paciente mandar uma saudação (ex: "oi", "olá", "bom dia", "boa tarde", "boa noite") ou iniciar o contato, dê boas-vindas acolhedoras e apresente de forma clara as opções de atendimento:
-   - 1️⃣ *Consultar agendamento* (Verificar detalhes da consulta marcada)
-   - 2️⃣ *Remarcar consulta* (Ver horários livres e escolher nova data)
-   - 3️⃣ *Desmarcar consulta* (Cancelar agendamento existente)
+   - 1️⃣ *Consultar agendamento* (Verificar detalhes da sua consulta)
+   - 2️⃣ *Remarcar consulta* (Escolher um novo dia ou horário)
+   - 3️⃣ *Desmarcar consulta* (Cancelar o seu agendamento)
 
-2. **Formato Obrigatório de Data para Remarcação e Busca de Horários:**
-   - Quando o paciente pedir para remarcar ou consultar horários disponíveis, solicite explicitamente para ele digitar a data no formato **DD/MM/AA** (ex: *25/09/26*) ou **DD/MM/AAAA**.
-   - Assim que o paciente enviar a data no formato dd/mm/yy (ex: 25/09/26), chame a ferramenta \`buscar_horarios_disponiveis\` enviando essa data para o sistema consultar a grade médica.
+2. **Fluxo de Remarcação (OPÇÃO 2) - REGRA CRÍTICA DE OURO:**
+   - Quando o paciente solicitar remarcação (ex: "2", "remarcar", "sim", "quero remarcar"), **NUNCA invoque a ferramenta \`buscar_horarios_disponiveis\` se o paciente NÃO tiver digitado a nova data na própria mensagem dele!**
+   - NUNCA use a data da consulta atual do paciente ou datas passadas no histórico para chamar a busca de horários!
+   - Se o paciente não informou a nova data na mensagem atual, RESPONDA IMEDIATAMENTE pedindo para ele informar a data desejada no formato **DD/MM/AA** (ex: *25/09/26* ou *28/09/26*).
+   - Apenas invoque \`buscar_horarios_disponiveis\` se a mensagem do paciente contiver uma data explícita (ex: "25/09/26", "28/09/2026", "amanhã", "segunda-feira").
 
-3. **Prevenção de Alucinação de Horários (REGRA CRÍTICA):** NUNCA invente ou prometa horários vagos sem consultar o sistema. O médico informa seu expediente (ex: 08:00 às 16:00), intervalo de almoço e tempo de consulta no painel. O sistema identifica as lacunas livres e você apresenta exatamente esses horários para o paciente escolher.
+3. **Exibição de Horários e Escolha:**
+   - Se houver horários livres na data consultada, apresente a lista de horários (ex: *08:00*, *08:30*, *09:00*, *14:00*) e peça para o paciente escolher o horário de sua preferência.
+   - Se a data for um dia sem atendimento (ex: Sábado/Domingo/Folga) ou sem vagas, informe educadamente o motivo e peça para o paciente digitar outra data no formato **DD/MM/AA**.
 
-4. **Confirmação de Remarcação:** Antes de acionar a ferramenta \`confirmar_remarcacao\`, confirme com o paciente a aceitação do novo horário escolhido.
+4. **Confirmação de Remarcação:**
+   - Assim que o paciente selecionar um horário válido (ex: "*09:00*"), invoque a ferramenta \`confirmar_remarcacao\` informando o agendamento_id e a nova data e horário.
 
-5. **Cancelamento:** Se o paciente escolher desmarcar (opção 3), identifique o agendamento e acione a ferramenta \`cancelar_consulta\`.
+5. **Cancelamento (OPÇÃO 3):**
+   - Se o paciente escolher desmarcar (opção 3), identifique o agendamento e invoque a ferramenta \`cancelar_consulta\`.
 
-6. **Transbordo Humano:** Dores graves, sintomas de emergência médica ou dúvidas de receitas ativam o protocolo imediato de transbordo para a recepção humana.
+6. **Transbordo Humano:** Dores graves, sintomas de emergência médica ou dúvidas clínicas ativam o protocolo imediato de transbordo para a recepção humana.
 
 7. **Formatação para WhatsApp:** Use negritos em *datas* e *horários*, emojis moderados e parágrafos curtos.`;
 
@@ -51,13 +57,13 @@ const openaiTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'buscar_horarios_disponiveis',
-      description: 'Consulta a grade de horários livres do médico cruzando expediente com agendamentos existentes.',
+      description: 'Consulta a grade de horários livres do médico para uma NOVA data especificamente digitada pelo paciente. NUNCA chame com a data da consulta atual do paciente ou sem que o paciente tenha enviado a data desejada na mensagem.',
       parameters: {
         type: 'object',
         properties: {
           data_desejada: {
             type: 'string',
-            description: 'Data no formato AAAA-MM-DD para a qual o paciente deseja agendar.',
+            description: 'Nova data desejada pelo paciente no formato DD/MM/AA ou AAAA-MM-DD. NÃO use a data da consulta atual do paciente.',
           },
           periodo: {
             type: 'string',
@@ -104,7 +110,7 @@ const openaiTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           },
           nova_data_hora: {
             type: 'string',
-            description: 'Nova data e horário no formato AAAA-MM-DD HH:mm (ex: 2026-09-15 14:30).',
+            description: 'Nova data e horário no formato AAAA-MM-DD HH:mm (ex: 2026-09-25 14:30).',
           },
         },
         required: ['agendamento_id', 'nova_data_hora'],
@@ -145,6 +151,67 @@ export interface AgentProcessResult {
 }
 
 /**
+ * Extrai datas no formato DD/MM/AA, DD/MM/AAAA ou termos amigáveis (hoje, amanhã, dia da semana)
+ */
+function extractDateFromText(text: string): { dateStr: string; formattedStr: string } | null {
+  const msgLower = text.toLowerCase().trim();
+  const today = new Date();
+
+  // Match DD/MM/YY ou DD/MM/YYYY ou DD/MM
+  const dateMatch = msgLower.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+  if (dateMatch) {
+    const day = parseInt(dateMatch[1], 10);
+    const month = parseInt(dateMatch[2], 10);
+    let year = dateMatch[3] ? parseInt(dateMatch[3], 10) : today.getFullYear();
+    if (year < 100) year += 2000;
+
+    const d = new Date(year, month - 1, day);
+    if (!isNaN(d.getTime())) {
+      const dateISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const formatted = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+      return { dateStr: dateISO, formattedStr: formatted };
+    }
+  }
+
+  if (msgLower.includes('hoje')) {
+    const dateISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    return { dateStr: dateISO, formattedStr: 'Hoje' };
+  }
+
+  if (msgLower.includes('amanhã') || msgLower.includes('amanha')) {
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    const dateISO = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+    return { dateStr: dateISO, formattedStr: 'Amanhã' };
+  }
+
+  const weekDaysMap: Record<string, number> = {
+    'domingo': 0,
+    'segunda': 1,
+    'terça': 2,
+    'terca': 2,
+    'quarta': 3,
+    'quinta': 4,
+    'sexta': 5,
+    'sábado': 6,
+    'sabado': 6,
+  };
+
+  for (const [dayName, dayNum] of Object.entries(weekDaysMap)) {
+    if (msgLower.includes(dayName)) {
+      const target = new Date(today);
+      let diff = (dayNum + 7 - today.getDay()) % 7;
+      if (diff === 0) diff = 7;
+      target.setDate(today.getDate() + diff);
+      const dateISO = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`;
+      return { dateStr: dateISO, formattedStr: target.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' }) };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Processador principal da conversa do Agente de IA com suporte a OpenAI / GenAI / Motor Inteligente Interno
  */
 export async function processAgentMessage({
@@ -154,6 +221,24 @@ export async function processAgentMessage({
   clinicId,
 }: ProcessMessageOptions): Promise<AgentProcessResult> {
   const toolsExecuted: Array<{ name: string; args: any; result: any }> = [];
+  const msgLower = userMessage.toLowerCase().trim();
+  const extractedDate = extractDateFromText(userMessage);
+
+  // Trava de segurança: Se a mensagem for "2", "remarcar", "sim" sem data explícita, nunca chama busca de horários!
+  const isRescheduleIntent =
+    msgLower === '2' ||
+    msgLower === 'remarcar' ||
+    msgLower.includes('remarcar consulta') ||
+    msgLower === 'sim' ||
+    msgLower === 'quero' ||
+    msgLower.includes('outra data');
+
+  if (isRescheduleIntent && !extractedDate) {
+    return {
+      reply: `📅 *Remarcação de Consulta*\n\nPara qual data você gostaria de verificar os horários disponíveis?\n\nPor favor, digite a data no formato **DD/MM/AA** (ex: *25/09/26* ou *28/09/26*).`,
+      toolsExecuted,
+    };
+  }
 
   const apiKey = process.env.OPENAI_API_KEY;
 
@@ -187,9 +272,16 @@ export async function processAgentMessage({
           const toolName = toolCall.function.name;
           const toolArgs = JSON.parse(toolCall.function.arguments || '{}');
 
-          // Injetar telefone do paciente se necessário
           if (toolName === 'buscar_consulta_atual' && !toolArgs.telefone_paciente) {
             toolArgs.telefone_paciente = patientPhone;
+          }
+
+          // Se o modelo tentou chamar buscar_horarios_disponiveis sem que o usuário tenha digitado uma data
+          if (toolName === 'buscar_horarios_disponiveis' && !extractedDate) {
+            return {
+              reply: `📅 *Remarcação de Consulta*\n\nPara qual data você gostaria de verificar os horários disponíveis?\n\nPor favor, digite a data no formato **DD/MM/AA** (ex: *25/09/26* ou *28/09/26*).`,
+              toolsExecuted,
+            };
           }
 
           const toolResult = await executeToolCall(toolName, toolArgs, clinicId);
@@ -202,7 +294,6 @@ export async function processAgentMessage({
           });
         }
 
-        // Fazer nova requisição com os resultados das ferramentas
         response = await openai.chat.completions.create({
           model: 'gpt-4o-mini',
           messages,
@@ -234,7 +325,7 @@ async function processWithFallbackIntelligence(
   clinicId?: string
 ): Promise<AgentProcessResult> {
   const toolsExecuted: Array<{ name: string; args: any; result: any }> = [];
-  const msgLower = userMessage.toLowerCase();
+  const msgLower = userMessage.toLowerCase().trim();
 
   // 1. Saudação inicial / Entrada do paciente (Oi, Olá, Bom dia, Boa tarde, Boa noite, Menu)
   const isGreeting =
@@ -263,13 +354,13 @@ async function processWithFallbackIntelligence(
     };
   }
 
-  // Opção 1: Consultar agendamento (Digitou "1" ou "consultar")
+  // 2. Opção 1: Consultar agendamento (Digitou "1" ou "consultar")
   if (
     msgLower === '1' ||
-    msgLower.includes('consultar') ||
+    msgLower === 'consultar' ||
+    msgLower.includes('consultar agendamento') ||
     msgLower.includes('minha consulta') ||
-    msgLower.includes('ver agendamento') ||
-    msgLower.includes('quando é')
+    msgLower.includes('ver agendamento')
   ) {
     const resAtual = await buscarConsultaAtual(patientPhone, clinicId);
     toolsExecuted.push({ name: 'buscar_consulta_atual', args: { telefone_paciente: patientPhone }, result: resAtual });
@@ -287,13 +378,13 @@ async function processWithFallbackIntelligence(
     }
   }
 
-  // Opção 3: Desmarcar / Cancelar consulta (Digitou "3" ou "desmarcar" ou "cancelar")
+  // 3. Opção 3: Desmarcar / Cancelar consulta (Digitou "3" ou "desmarcar" ou "cancelar")
   if (
     msgLower === '3' ||
-    msgLower.includes('desmarcar') ||
-    msgLower.includes('cancelar') ||
-    msgLower.includes('desistir') ||
-    msgLower.includes('não vou poder')
+    msgLower === 'desmarcar' ||
+    msgLower.includes('desmarcar consulta') ||
+    msgLower.includes('cancelar consulta') ||
+    msgLower.includes('desistir')
   ) {
     const resAtual = await buscarConsultaAtual(patientPhone, clinicId);
     toolsExecuted.push({ name: 'buscar_consulta_atual', args: { telefone_paciente: patientPhone }, result: resAtual });
@@ -313,76 +404,71 @@ async function processWithFallbackIntelligence(
     }
   }
 
-  // Opção 2: Remarcar consulta (Digitou "2" ou "remarcar" ou horários)
+  // 4. Verificação de data no texto (ex: 25/09/26 ou 28/09/2026)
+  const extractedDate = extractDateFromText(userMessage);
+
+  // Se o paciente digitou "2" ou "remarcar" SEM informar a data:
   if (
-    msgLower === '2' ||
-    msgLower.includes('remarcar') ||
-    msgLower.includes('mudar') ||
-    msgLower.includes('horário') ||
-    msgLower.includes('vago') ||
-    msgLower.includes('quarta') ||
-    msgLower.includes('terça') ||
-    msgLower.includes('quinta') ||
-    msgLower.includes('sexta') ||
-    msgLower.includes('segunda')
+    (msgLower === '2' ||
+      msgLower === 'remarcar' ||
+      msgLower.includes('remarcar consulta') ||
+      msgLower === 'sim' ||
+      msgLower === 'quero' ||
+      msgLower.includes('outra data')) &&
+    !extractedDate
   ) {
-    const today = new Date();
-    let targetDate = new Date(today);
-    targetDate.setDate(today.getDate() + 1);
+    return {
+      reply: `📅 *Remarcação de Consulta*\n\nPara qual data você gostaria de verificar os horários disponíveis?\n\nPor favor, digite a data no formato **DD/MM/AA** (ex: *25/09/26* ou *28/09/26*).`,
+      toolsExecuted,
+    };
+  }
 
-    if (msgLower.includes('hoje')) {
-      targetDate = today;
-    } else if (msgLower.includes('terça') || msgLower.includes('terca')) {
-      targetDate.setDate(today.getDate() + ((2 + 7 - today.getDay()) % 7 || 7));
-    } else if (msgLower.includes('quarta')) {
-      targetDate.setDate(today.getDate() + ((3 + 7 - today.getDay()) % 7 || 7));
-    } else if (msgLower.includes('quinta')) {
-      targetDate.setDate(today.getDate() + ((4 + 7 - today.getDay()) % 7 || 7));
-    } else if (msgLower.includes('sexta')) {
-      targetDate.setDate(today.getDate() + ((5 + 7 - today.getDay()) % 7 || 7));
-    }
-
-    const dateStr = targetDate.toISOString().split('T')[0];
-    const resHorarios = await buscarHorariosDisponiveis(dateStr, 'qualquer', clinicId);
-    toolsExecuted.push({ name: 'buscar_horarios_disponiveis', args: { data_desejada: dateStr }, result: resHorarios });
+  // Se uma data foi informada ou a mensagem contém pedido de horários para uma data específica:
+  if (extractedDate) {
+    const resHorarios = await buscarHorariosDisponiveis(extractedDate.dateStr, 'qualquer', clinicId);
+    toolsExecuted.push({ name: 'buscar_horarios_disponiveis', args: { data_desejada: extractedDate.dateStr }, result: resHorarios });
 
     if (resHorarios.data?.slots?.length > 0) {
       return {
-        reply: `📅 *Horários Disponíveis para Agendamento*\n\n${resHorarios.message}\n\nQual desses horários fica melhor para você? Responda com o horário desejado (ex: *14:00*) para confirmarmos!`,
+        reply: `📅 *Horários Disponíveis em ${extractedDate.formattedStr}:*\n\n${resHorarios.data.slots.map((s: string) => `• *${s}*`).join('\n')}\n\nPor favor, responda com o horário desejado (ex: *${resHorarios.data.slots[0]}*) para confirmarmos a sua remarcação!`,
         toolsExecuted,
       };
     } else {
       return {
-        reply: `${resHorarios.message} Deseja consultar outra data?`,
+        reply: `⚠️ ${resHorarios.message}\n\nPor favor, informe outra data no formato **DD/MM/AA** (ex: *28/09/26*) para consultarmos a agenda.`,
         toolsExecuted,
       };
     }
   }
 
-  // 5. Confirmação de horário específico
-  const timeMatch = msgLower.match(/(\d{1,2})(?:[:h](\d{2}))?/);
-  if (timeMatch || msgLower.includes('sim') || msgLower.includes('pode ser') || msgLower.includes('confirmo')) {
+  // 5. Confirmação de horário específico (ex: "09:00", "09:00h", "14:30")
+  const timeMatch = msgLower.match(/\b(\d{1,2})[:h](\d{2})?\b|\b(\d{1,2})h\b/);
+  if (timeMatch) {
     const resAtual = await buscarConsultaAtual(patientPhone, clinicId);
     toolsExecuted.push({ name: 'buscar_consulta_atual', args: { telefone_paciente: patientPhone }, result: resAtual });
 
     if (resAtual.data?.appointmentId) {
-      // Tentar encontrar a data mencionada nas mensagens anteriores do histórico
+      // Buscar a última data consultada no histórico recente
       let targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() + 1); // Padrão: amanhã
+      targetDate.setDate(targetDate.getDate() + 1);
 
       for (let i = history.length - 1; i >= 0; i--) {
-        const dateMatch = history[i].content.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+        const dateMatch = extractDateFromText(history[i].content);
         if (dateMatch) {
-          const day = parseInt(dateMatch[1], 10);
-          const month = parseInt(dateMatch[2], 10) - 1;
-          const year = parseInt(dateMatch[3], 10);
-          targetDate = new Date(year, month, day);
+          const parts = dateMatch.dateStr.split('-');
+          targetDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
           break;
         }
       }
 
-      const hour = timeMatch ? parseInt(timeMatch[1], 10) : 14;
-      const min = timeMatch && timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+      let hour = 14;
+      let min = 0;
+
+      if (timeMatch[1]) hour = parseInt(timeMatch[1], 10);
+      else if (timeMatch[3]) hour = parseInt(timeMatch[3], 10);
+
+      if (timeMatch[2]) min = parseInt(timeMatch[2], 10);
+
       targetDate.setHours(hour, min, 0, 0);
 
       const novaDataHoraStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')} ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
@@ -395,14 +481,14 @@ async function processWithFallbackIntelligence(
       });
 
       return {
-        reply: `${resRemarcar.message}\n\nSua consulta foi atualizada e o seu novo comprovante de agendamento já está ativo. Caso precise de mais algo, estou à disposição!`,
+        reply: `${resRemarcar.message}\n\nSua consulta foi atualizada no sistema. Se precisar de algo mais, estamos à disposição!`,
         toolsExecuted,
       };
     }
   }
 
   return {
-    reply: `Olá! Sou a assistente de reagendamentos da clínica. Como posso ajudar com a sua consulta? Você pode me perguntar sobre seus horários agendados, reagendar ou cancelar.`,
+    reply: `Olá! Para te ajudar com a sua consulta, escolha uma das opções abaixo enviando o número correspondente:\n\n1️⃣ *Consultar Agendamento*\n2️⃣ *Remarcar Consulta* (Informe a data em formato DD/MM/AA)\n3️⃣ *Desmarcar Consulta*`,
     toolsExecuted,
   };
 }
