@@ -24,6 +24,18 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  // Diagnóstico das variáveis de ambiente na Vercel
+  if (searchParams.get('debug') === 'env') {
+    return NextResponse.json({
+      hasMetaToken: !!process.env.META_ACCESS_TOKEN,
+      metaTokenPrefix: process.env.META_ACCESS_TOKEN ? process.env.META_ACCESS_TOKEN.slice(0, 8) : null,
+      metaPhoneNumberId: process.env.META_PHONE_NUMBER_ID || null,
+      metaGraphVersion: process.env.META_GRAPH_VERSION || null,
+      hasOpenAiKey: !!process.env.OPENAI_API_KEY,
+      nodeEnv: process.env.NODE_ENV,
+    });
+  }
+
   console.warn('⚠️ Tentativa de verificação do Webhook falhou. Token inválido.');
   return new NextResponse('Forbidden', { status: 403 });
 }
