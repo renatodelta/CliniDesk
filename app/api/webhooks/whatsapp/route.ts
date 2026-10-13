@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   const token = searchParams.get('hub.verify_token');
   const challenge = searchParams.get('hub.challenge');
 
-  const verifyToken = process.env.VERIFY_TOKEN || 'meu_token_secreto_123';
+  const verifyToken = (process.env.VERIFY_TOKEN || 'meu_token_secreto_123').replace(/['"]/g, '').trim();
 
   if (mode === 'subscribe' && token === verifyToken) {
     console.log('✅ Webhook da Meta verificado com sucesso!');
