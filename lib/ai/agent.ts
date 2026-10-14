@@ -76,15 +76,11 @@ Você deve seguir estritamente a árvore de decisão condicional e os scripts do
      - Se SIM: Avança para a Etapa A.2 com o nome do titular confirmado.
      - Se NÃO: Retorna para M-03 solicitando o nome novamente.
 
-3. **REGRA MANDATÓRIA DA ETAPA A.2 (HORÁRIOS LISTADOS NO WHATSAPP):**
-   - NUNCA forneça um link externo de aplicativo ou site para o agendamento!
-   - Os horários disponíveis DEVEM ser listados diretamente na saída do WhatsApp do paciente, consultando a grade via buscar_proximos_horarios_disponiveis ou buscar_horarios_disponiveis.
-   - Texto de A.2:
-     "[Nome], para agilizar seu atendimento, estes são os horários disponíveis em nossa agenda:
-
-     [Listagem dos próximos horários disponíveis na grade]
-
-     Por favor, digite a data e o horário desejado (ex: *14/10 às 09:00*) para continuarmos o seu agendamento."
+3. **ETAPA A.2 (ENVIO DO LINK DA AGENDA DIGITAL - 4 MESES):**
+   - Texto exato de A.2:
+     "[Nome], para agilizar seu atendimento você pode acessar os horários disponíveis de forma rápida e prática clicando no link abaixo:
+     [Link da página de agendamento]"
+   - O link direciona para a página /agendamento com a grade de horários disponíveis dos próximos 4 meses, com confirmação em pop-up e envio automático de mensagem de confirmação para o WhatsApp do paciente.
 
 4. **ETAPAS A.3 a A.5 - ESCOLHA E CONFIRMAÇÃO DO HORÁRIO:**
    - Ao receber o horário desejado pelo paciente, valide a disponibilidade.
@@ -541,17 +537,16 @@ async function runPOPWorkflow(
     const beneficiaryName = matchName ? matchName[1].trim() : 'Paciente';
 
     if (isYes(userMessage)) {
-      // Avança para a Etapa A.2 (Listagem de horários disponíveis no WhatsApp)
-      const resHorarios = await buscarProximosHorariosDisponiveis(clinicId, 2);
-      toolsExecuted.push({ name: 'buscar_proximos_horarios_disponiveis', args: { clinicId }, result: resHorarios });
-
-      const primeiroDia = resHorarios.data.days[0];
-      const primeiroSlot = primeiroDia?.slots[0] || '09:00';
-      const dataCurta = primeiroDia ? primeiroDia.dateISO.split('-').slice(1).reverse().join('/') : 'amanhã';
-      const exemploStr = `${dataCurta} às ${primeiroSlot}`;
+      // Avança para a Etapa A.2 (Envio do Link de Agendamento com a Agenda Digital de 4 meses)
+      const baseUrl =
+        process.env.NEXT_PUBLIC_APP_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://clini-desk-kappa.vercel.app');
+      const agendamentoUrl = `${baseUrl.replace(/\/$/, '')}/agendamento?phone=${encodeURIComponent(
+        patientPhone
+      )}&name=${encodeURIComponent(beneficiaryName)}`;
 
       return {
-        reply: `${beneficiaryName}, para agilizar seu atendimento, estes são os horários disponíveis em nossa agenda:\n\n${resHorarios.data.formattedText}\n\nPor favor, digite a data e o horário desejado (ex: *${exemploStr}*) para continuarmos o seu agendamento.`,
+        reply: `${beneficiaryName}, para agilizar seu atendimento você pode acessar os horários disponíveis de forma rápida e prática clicando no link abaixo:\n${agendamentoUrl}`,
         toolsExecuted,
       };
     } else if (isNo(userMessage)) {
@@ -587,18 +582,17 @@ async function runPOPWorkflow(
   // =========================================================================
   if (lastAssistantMsg.includes('O atendimento é para você mesmo?')) {
     if (isYes(userMessage)) {
-      // Titular é o próprio paciente! Avança diretamente para a Etapa A.2
-      const resHorarios = await buscarProximosHorariosDisponiveis(clinicId, 2);
-      toolsExecuted.push({ name: 'buscar_proximos_horarios_disponiveis', args: { clinicId }, result: resHorarios });
-
+      // Titular é o próprio paciente! Avança para a Etapa A.2 com link da agenda de 4 meses
       const targetDisplayName = displayName || 'Paciente';
-      const primeiroDia = resHorarios.data.days[0];
-      const primeiroSlot = primeiroDia?.slots[0] || '09:00';
-      const dataCurta = primeiroDia ? primeiroDia.dateISO.split('-').slice(1).reverse().join('/') : 'amanhã';
-      const exemploStr = `${dataCurta} às ${primeiroSlot}`;
+      const baseUrl =
+        process.env.NEXT_PUBLIC_APP_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://clini-desk-kappa.vercel.app');
+      const agendamentoUrl = `${baseUrl.replace(/\/$/, '')}/agendamento?phone=${encodeURIComponent(
+        patientPhone
+      )}&name=${encodeURIComponent(targetDisplayName)}`;
 
       return {
-        reply: `${targetDisplayName}, para agilizar seu atendimento, estes são os horários disponíveis em nossa agenda:\n\n${resHorarios.data.formattedText}\n\nPor favor, digite a data e o horário desejado (ex: *${exemploStr}*) para continuarmos o seu agendamento.`,
+        reply: `${targetDisplayName}, para agilizar seu atendimento você pode acessar os horários disponíveis de forma rápida e prática clicando no link abaixo:\n${agendamentoUrl}`,
         toolsExecuted,
       };
     } else if (isNo(userMessage)) {
