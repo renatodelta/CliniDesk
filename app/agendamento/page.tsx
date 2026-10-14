@@ -188,8 +188,14 @@ export default function AgendamentoOnlinePage() {
       return;
     }
 
+    const cleanCpf = patientCpf.replace(/\D/g, '');
+    if (!cleanCpf || cleanCpf.length !== 11) {
+      setSubmitError('Por favor, informe o CPF completo do paciente (11 dígitos) para o cadastro no sistema.');
+      return;
+    }
+
     if (!patientPhone.replace(/\D/g, '')) {
-      setSubmitError('Por favor, informe o telefone de contato.');
+      setSubmitError('Por favor, informe o telefone de contato do paciente.');
       return;
     }
 
@@ -549,7 +555,7 @@ export default function AgendamentoOnlinePage() {
               {/* NOME COMPLETO */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Nome Completo do Paciente *
+                  {isForOtherPerson ? 'Nome Completo do Paciente (quem será atendido) *' : 'Nome Completo do Paciente *'}
                 </label>
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -567,12 +573,13 @@ export default function AgendamentoOnlinePage() {
               {/* CPF */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  CPF do Paciente
+                  CPF do Paciente * <span className="text-[11px] font-normal text-slate-500">(Obrigatório para o cadastro)</span>
                 </label>
                 <div className="relative">
                   <CreditCard className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                   <input
                     type="text"
+                    required
                     value={patientCpf}
                     onChange={(e) => setPatientCpf(formatCpfMask(e.target.value))}
                     placeholder="000.000.000-00"
@@ -584,7 +591,7 @@ export default function AgendamentoOnlinePage() {
               {/* TELEFONE DE CONTATO / WHATSAPP */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Telefone / WhatsApp *
+                  {isForOtherPerson ? 'Telefone / Celular do Paciente *' : 'Telefone / WhatsApp *'}
                 </label>
                 <div className="relative">
                   <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -597,8 +604,10 @@ export default function AgendamentoOnlinePage() {
                     className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-medium"
                   />
                 </div>
-                <span className="text-[11px] text-slate-400 mt-1 block">
-                  Enviaremos a confirmação oficial imediatamente para este WhatsApp.
+                <span className="text-[11px] text-teal-700 mt-1 block font-medium">
+                  {isForOtherPerson && patientPhoneParam
+                    ? `O paciente será cadastrado no sistema da clínica. O comprovante também será enviado para o WhatsApp que agendou (${formatPhoneMask(patientPhoneParam)}).`
+                    : 'Enviaremos a confirmação oficial imediatamente para este WhatsApp.'}
                 </span>
               </div>
 
@@ -611,7 +620,7 @@ export default function AgendamentoOnlinePage() {
                   rows={2}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Ex: Consulta de rotina, acompanhamento..."
+                  placeholder="Ex: Primeira consulta, retorno, exames..."
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
               </div>
