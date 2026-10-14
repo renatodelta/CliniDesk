@@ -66,10 +66,14 @@ export default function AgendamentoOnlinePage() {
       const params = new URLSearchParams(window.location.search);
       const phone = params.get('phone') || '';
       const name = params.get('name') || '';
+      const forOther = params.get('forOther') === 'true' || params.get('terceiro') === 'true';
       setPatientPhoneParam(phone);
       setPatientNameParam(name);
       setPatientName(name);
       setPatientPhone(formatPhoneMask(phone));
+      if (forOther) {
+        setIsForOtherPerson(true);
+      }
     }
   }, []);
 

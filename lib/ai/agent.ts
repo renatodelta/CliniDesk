@@ -260,6 +260,7 @@ export interface ProcessMessageOptions {
   userMessage: string;
   conversationHistory?: Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: string }>;
   clinicId?: string;
+  pushName?: string;
 }
 
 export interface AgentProcessResult {
@@ -427,7 +428,8 @@ async function runPOPWorkflow(
   history: Array<{ role: string; content: string }>,
   clinicId?: string,
   patientName: string = 'Paciente',
-  patientId?: string
+  patientId?: string,
+  pushName?: string
 ): Promise<AgentProcessResult | null> {
   const toolsExecuted: Array<{ name: string; args: any; result: any }> = [];
   const msgLower = userMessage.toLowerCase().trim();
@@ -455,12 +457,23 @@ async function runPOPWorkflow(
   const assistantMessages = history.filter((m) => m.role === 'assistant');
   const lastAssistantMsg = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].content : '';
 
-  const displayName = patientName && patientName !== 'Paciente' ? patientName.split(' ')[0] : '';
+  // Determinar o nome do titular do WhatsApp (quem está conversando no momento)
+  const effectiveName = (pushName && pushName !== 'Paciente') ? pushName : patientName;
+  const displayName = effectiveName && effectiveName !== 'Paciente' ? effectiveName.split(' ')[0] : '';
   const greetingName = displayName ? `${displayName}, ` : '';
 
-  // 3. RECUPERAR BENEFICIÁRIO (caso o atendimento seja para terceiro confirmado em M-04)
+  // 3. RECUPERAR BENEFICIÁRIO (somente se nesta sessão recente houve confirmação de terceiro em M-04)
   let currentBeneficiary = displayName || patientName;
+  let sessionStartIndex = 0;
   for (let i = history.length - 1; i >= 0; i--) {
+    const content = history[i].content || '';
+    if (content.includes('agradece o contato e deseja um ótimo dia') || content.includes('Esperamos vê-lo(a) aqui novamente em breve')) {
+      sessionStartIndex = i + 1;
+      break;
+    }
+  }
+
+  for (let i = history.length - 1; i >= sessionStartIndex; i--) {
     const m = history[i];
     if (m.role === 'assistant') {
       const match = m.content.match(/Sr\.\(a\)\s+([^?\n]+)/i);
@@ -543,10 +556,11 @@ async function runPOPWorkflow(
         (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://clini-desk-kappa.vercel.app');
       const agendamentoUrl = `${baseUrl.replace(/\/$/, '')}/agendamento?phone=${encodeURIComponent(
         patientPhone
-      )}&name=${encodeURIComponent(beneficiaryName)}`;
+      )}&name=${encodeURIComponent(beneficiaryName)}&forOther=true`;
 
+      const titularPrefix = displayName ? `${displayName}, ` : '';
       return {
-        reply: `${beneficiaryName}, para agilizar seu atendimento você pode acessar os horários disponíveis de forma rápida e prática clicando no link abaixo:\n${agendamentoUrl}`,
+        reply: `${titularPrefix}para agilizar o atendimento de ${beneficiaryName}, você pode acessar os horários disponíveis de forma rápida e prática clicando no link abaixo:\n${agendamentoUrl}`,
         toolsExecuted,
       };
     } else if (isNo(userMessage)) {
@@ -791,6 +805,7 @@ export async function processAgentMessage({
   userMessage,
   conversationHistory = [],
   clinicId,
+  pushName,
 }: ProcessMessageOptions): Promise<AgentProcessResult> {
   const toolsExecuted: Array<{ name: string; args: any; result: any }> = [];
 
@@ -814,7 +829,7 @@ export async function processAgentMessage({
   }
 
   // 1. EXECUTA O MOTOR OFICIAL DO POP (Garante 100% de aderência aos scripts M-01 a M-09)
-  const popResult = await runPOPWorkflow(patientPhone, userMessage, conversationHistory, clinicId, patientName, patientId);
+  const popResult = await runPOPWorkflow(patientPhone, userMessage, conversationHistory, clinicId, patientName, patientId, pushName);
   if (popResult) {
     return popResult;
   }

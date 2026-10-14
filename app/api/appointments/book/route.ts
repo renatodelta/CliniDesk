@@ -50,60 +50,137 @@ export async function POST(req: NextRequest) {
       ? `${cleanCpf.slice(0, 3)}.${cleanCpf.slice(3, 6)}.${cleanCpf.slice(6, 9)}-${cleanCpf.slice(9, 11)}`
       : patientCpf || null;
 
-    // 1. Localizar ou cadastrar obrigatoriamente o paciente no "Cadastro de Pacientes"
-    // Busca por CPF (se informado) OU pelos últimos dígitos do telefone
+    // 1. Localizar ou cadastrar o paciente no banco de dados
     let patient = null;
 
-    if (cleanCpf) {
-      patient = await prisma.patient.findFirst({
-        where: {
-          clinicId: clinic.id,
-          OR: [
-            { cpf: { contains: cleanCpf } },
-            { phone: { contains: cleanPatientPhone.slice(-8) } },
-          ],
-        },
-      });
+    if (isForOtherPerson) {
+      // O agendamento é para outra pessoa (ex: Júlio). O contato no WhatsApp é o titular (ex: Renato).
+      // Se o paciente informado possui telefone próprio diferente do contato do WhatsApp:
+      if (cleanPatientPhone && cleanPatientPhone !== cleanContactPhone) {
+        if (cleanCpf) {
+          patient = await prisma.patient.findFirst({
+            where: {
+              clinicId: clinic.id,
+              OR: [
+                { cpf: { contains: cleanCpf } },
+                { phone: { contains: cleanPatientPhone.slice(-8) } },
+              ],
+            },
+          });
+        } else {
+          patient = await prisma.patient.findFirst({
+            where: {
+              clinicId: clinic.id,
+              phone: { contains: cleanPatientPhone.slice(-8) },
+            },
+          });
+        }
+
+        const patientNotes = `Cadastrado via Agendamento Online por terceiro (WhatsApp: ${formattedContactPhone}). ${notes || ''}`.trim();
+
+        if (patient) {
+          patient = await prisma.patient.update({
+            where: { id: patient.id },
+            data: {
+              name: patientName.trim(),
+              cpf: formattedCpf || patient.cpf,
+              phone: formattedPatientPhone,
+              notes: patient.notes ? `${patient.notes} | ${patientNotes}` : patientNotes,
+            },
+          });
+        } else {
+          patient = await prisma.patient.create({
+            data: {
+              clinicId: clinic.id,
+              name: patientName.trim(),
+              phone: formattedPatientPhone,
+              cpf: formattedCpf,
+              notes: patientNotes,
+            },
+          });
+        }
+      } else {
+        // O paciente compartilha o mesmo telefone do titular (ex: dependente/filho).
+        // IMPORTANTE: NÃO sobrescrever o nome do titular do WhatsApp!
+        let titular = await prisma.patient.findFirst({
+          where: {
+            clinicId: clinic.id,
+            phone: { contains: cleanContactPhone.slice(-8) },
+          },
+        });
+
+        if (!titular) {
+          titular = await prisma.patient.create({
+            data: {
+              clinicId: clinic.id,
+              name: `Titular (${formattedContactPhone})`,
+              phone: formattedContactPhone,
+              notes: `Responsável/Titular WhatsApp. Marcou para: ${patientName.trim()}`,
+            },
+          });
+        } else {
+          // Atualiza apenas as notas do titular sem alterar o seu nome
+          await prisma.patient.update({
+            where: { id: titular.id },
+            data: {
+              notes: titular.notes
+                ? `${titular.notes} | Responsável/Contato de ${patientName.trim()}`
+                : `Responsável/Contato de ${patientName.trim()}`,
+            },
+          }).catch(() => {});
+        }
+
+        patient = titular;
+      }
     } else {
-      patient = await prisma.patient.findFirst({
-        where: {
-          clinicId: clinic.id,
-          phone: { contains: cleanPatientPhone.slice(-8) },
-        },
-      });
+      // Atendimento para o próprio titular
+      if (cleanCpf) {
+        patient = await prisma.patient.findFirst({
+          where: {
+            clinicId: clinic.id,
+            OR: [
+              { cpf: { contains: cleanCpf } },
+              { phone: { contains: cleanPatientPhone.slice(-8) } },
+            ],
+          },
+        });
+      } else {
+        patient = await prisma.patient.findFirst({
+          where: {
+            clinicId: clinic.id,
+            phone: { contains: cleanPatientPhone.slice(-8) },
+          },
+        });
+      }
+
+      const patientNotes = (notes || 'Cadastrado via Agendamento Online').trim();
+
+      if (patient) {
+        patient = await prisma.patient.update({
+          where: { id: patient.id },
+          data: {
+            name: patientName.trim(),
+            cpf: formattedCpf || patient.cpf,
+            phone: formattedPatientPhone,
+            notes: patient.notes ? `${patient.notes} | ${patientNotes}` : patientNotes,
+          },
+        });
+        console.log(`👤 Paciente existente atualizado no cadastro: ${patient.name} (CPF: ${patient.cpf})`);
+      } else {
+        patient = await prisma.patient.create({
+          data: {
+            clinicId: clinic.id,
+            name: patientName.trim(),
+            phone: formattedPatientPhone,
+            cpf: formattedCpf,
+            notes: patientNotes,
+          },
+        });
+        console.log(`👤 Novo paciente cadastrado com sucesso: ${patient.name} (CPF: ${patient.cpf}, Tel: ${patient.phone})`);
+      }
     }
 
-    const patientNotes = isForOtherPerson
-      ? `Cadastrado via Agendamento Online por terceiro (WhatsApp: ${formattedContactPhone}). ${notes || ''}`.trim()
-      : (notes || 'Cadastrado via Agendamento Online').trim();
-
-    if (patient) {
-      // Atualizar dados cadastrais do paciente existente
-      patient = await prisma.patient.update({
-        where: { id: patient.id },
-        data: {
-          name: patientName.trim(),
-          cpf: formattedCpf || patient.cpf,
-          phone: formattedPatientPhone,
-          notes: patient.notes ? `${patient.notes} | ${patientNotes}` : patientNotes,
-        },
-      });
-      console.log(`👤 Paciente existente atualizado no cadastro: ${patient.name} (CPF: ${patient.cpf})`);
-    } else {
-      // Criar novo cadastro no "Cadastro de Pacientes"
-      patient = await prisma.patient.create({
-        data: {
-          clinicId: clinic.id,
-          name: patientName.trim(),
-          phone: formattedPatientPhone,
-          cpf: formattedCpf,
-          notes: patientNotes,
-        },
-      });
-      console.log(`👤 Novo paciente cadastrado com sucesso: ${patient.name} (CPF: ${patient.cpf}, Tel: ${patient.phone})`);
-    }
-
-    // 2. Se for agendado por outra pessoa, garantir que o contato do marcador também fique registrado se necessário
+    // 2. Se for agendado por outra pessoa com telefone diferente, garantir que o contato do marcador fique registrado
     if (isForOtherPerson && cleanContactPhone && cleanContactPhone !== cleanPatientPhone) {
       const existingBooker = await prisma.patient.findFirst({
         where: {
@@ -117,7 +194,7 @@ export async function POST(req: NextRequest) {
             clinicId: clinic.id,
             name: `Contato Marcador (${formattedContactPhone})`,
             phone: formattedContactPhone,
-            notes: `Marcou consulta para o paciente: ${patient.name} (CPF: ${patient.cpf || 'N/A'})`,
+            notes: `Marcou consulta para o paciente: ${patientName.trim()} (CPF: ${formattedCpf || 'N/A'})`,
           },
         }).catch((e) => console.warn('Aviso ao registrar contato do marcador:', e.message));
       }
@@ -150,10 +227,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Criar o agendamento vinculado OBRIGATORIAMENTE ao paciente cadastrado
+    // 4. Criar o agendamento vinculado ao paciente / titular
     const appointmentNotes = isForOtherPerson
-      ? `Agendado via Web para o paciente: ${patient.name} (CPF: ${patient.cpf || 'N/A'}, Tel: ${patient.phone}). Solicitado por WhatsApp: ${formattedContactPhone}. ${notes || ''}`.trim()
-      : `Agendado pelo próprio paciente via Web. CPF: ${patient.cpf || 'N/A'}. ${notes || ''}`.trim();
+      ? `Agendado via Web para o paciente: ${patientName.trim()} (CPF: ${formattedCpf || 'N/A'}). Solicitado pelo titular WhatsApp: ${formattedContactPhone}. ${notes || ''}`.trim()
+      : `Agendado pelo próprio paciente via Web. CPF: ${formattedCpf || 'N/A'}. ${notes || ''}`.trim();
 
     const appointment = await prisma.appointment.create({
       data: {
@@ -170,8 +247,8 @@ export async function POST(req: NextRequest) {
 
     // 5. Disparar mensagem de confirmação para o WhatsApp que agendou
     const confirmMessage = isForOtherPerson
-      ? `🎉 *Agendamento Confirmado com Sucesso!*\n\nA consulta para *${patient.name}* com *${doctor.name}* foi confirmada para:\n\n📅 *Data:* ${dataFormatada}\n🏥 *Local:* ${clinic.name}\n👤 *Paciente Cadastrado:* ${patient.name} (CPF: ${patient.cpf || 'Não informado'})\n\n${doctor.name} agradece o contato e deseja um ótimo dia!`
-      : `🎉 *Agendamento Confirmado com Sucesso!*\n\nOlá, *${patient.name}*! Sua consulta com *${doctor.name}* foi confirmada para:\n\n📅 *Data:* ${dataFormatada}\n🏥 *Local:* ${clinic.name}\n\n${doctor.name} agradece o contato e deseja um ótimo dia!`;
+      ? `🎉 *Agendamento Confirmado com Sucesso!*\n\nA consulta para *${patientName.trim()}* com *${doctor.name}* foi confirmada para:\n\n📅 *Data:* ${dataFormatada}\n🏥 *Local:* ${clinic.name}\n👤 *Paciente Atendido:* ${patientName.trim()} (CPF: ${formattedCpf || 'Não informado'})\n\n${doctor.name} agradece o contato e deseja um ótimo dia!`
+      : `🎉 *Agendamento Confirmado com Sucesso!*\n\nOlá, *${patientName.trim()}*! Sua consulta com *${doctor.name}* foi confirmada para:\n\n📅 *Data:* ${dataFormatada}\n🏥 *Local:* ${clinic.name}\n\n${doctor.name} agradece o contato e deseja um ótimo dia!`;
 
     // Salvar mensagem no histórico do WhatsApp
     await prisma.message.create({

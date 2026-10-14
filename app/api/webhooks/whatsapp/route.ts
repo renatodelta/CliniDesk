@@ -140,6 +140,15 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // Sanitização do nome de perfil recebido pelo WhatsApp
+    const cleanedPush = pushName
+      ? pushName
+          .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}]/gu, '')
+          .replace(/[^\p{L}\s.'-]/gu, '')
+          .trim()
+      : '';
+    const safePushName = cleanedPush && cleanedPush.length >= 2 && cleanedPush.toLowerCase() !== 'paciente' ? cleanedPush : '';
+
     // Buscar ou criar paciente no banco de dados
     let patient = await prisma.patient.findFirst({
       where: {
@@ -152,11 +161,23 @@ export async function POST(req: NextRequest) {
       patient = await prisma.patient.create({
         data: {
           clinicId: clinic.id,
-          name: pushName,
+          name: safePushName || pushName || 'Paciente',
           phone: formattedPhone,
         },
       });
       console.log(`👤 Novo paciente cadastrado automaticamente: ${patient.name} (${patient.phone})`);
+    } else if (safePushName) {
+      // Se o titular mandou mensagem e seu nome no banco difere completamente do pushName
+      // (ex: foi sobrescrito para o nome de um terceiro como "Júlio"), sincronizamos de volta para o dono do WhatsApp
+      const currentLower = (patient.name || '').toLowerCase().trim();
+      const pushFirst = safePushName.toLowerCase().split(' ')[0];
+      if (!currentLower.includes(pushFirst)) {
+        console.log(`🔄 Restaurando nome do titular do WhatsApp no cadastro: de "${patient.name}" para "${safePushName}"`);
+        patient = await prisma.patient.update({
+          where: { id: patient.id },
+          data: { name: safePushName },
+        });
+      }
     }
 
     // 1. Salvar mensagem recebida do usuário no histórico
@@ -188,6 +209,7 @@ export async function POST(req: NextRequest) {
       userMessage: userText,
       conversationHistory: history,
       clinicId: clinic.id,
+      pushName: safePushName || undefined,
     });
 
     // 4. Salvar resposta do assistente no banco
