@@ -492,3 +492,201 @@ export async function confirmarRemarcacao(
   }
 }
 
+/**
+ * 5. BUSCAR PRÓXIMOS DIAS E HORÁRIOS DISPONÍVEIS NA GRADE
+ */
+export async function buscarProximosHorariosDisponiveis(
+  clinicId?: string,
+  diasDesejados: number = 2
+): Promise<{
+  success: boolean;
+  message: string;
+  data: {
+    days: Array<{
+      dateISO: string;
+      formattedDate: string;
+      slots: string[];
+    }>;
+    formattedText: string;
+  };
+}> {
+  try {
+    const clinic = clinicId
+      ? await prisma.clinic.findUnique({ where: { id: clinicId } })
+      : await prisma.clinic.findFirst();
+
+    if (!clinic) {
+      return {
+        success: false,
+        message: 'Clínica não encontrada.',
+        data: { days: [], formattedText: '' },
+      };
+    }
+
+    const daysWithSlots: Array<{
+      dateISO: string;
+      formattedDate: string;
+      slots: string[];
+    }> = [];
+
+    const now = new Date();
+    const checkDate = new Date(now);
+
+    for (let i = 0; i < 14; i++) {
+      if (daysWithSlots.length >= diasDesejados) break;
+
+      const year = checkDate.getFullYear();
+      const month = String(checkDate.getMonth() + 1).padStart(2, '0');
+      const day = String(checkDate.getDate()).padStart(2, '0');
+      const dateISO = `${year}-${month}-${day}`;
+
+      const res = await buscarHorariosDisponiveis(dateISO, 'qualquer', clinic.id);
+      if (res.success && res.data?.slots && res.data.slots.length > 0) {
+        const formattedDate = checkDate.toLocaleDateString('pt-BR', {
+          weekday: 'long',
+          day: '2-digit',
+          month: '2-digit',
+        });
+        const capFormattedDate = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
+
+        daysWithSlots.push({
+          dateISO,
+          formattedDate: capFormattedDate,
+          slots: res.data.slots,
+        });
+      }
+
+      checkDate.setDate(checkDate.getDate() + 1);
+    }
+
+    if (daysWithSlots.length === 0) {
+      return {
+        success: true,
+        message: 'Não há horários disponíveis nos próximos dias.',
+        data: { days: [], formattedText: 'No momento, não localizamos horários livres na agenda nos próximos dias.' },
+      };
+    }
+
+    const lines: string[] = [];
+    for (const d of daysWithSlots) {
+      const displaySlots = d.slots.slice(0, 6).join(', ');
+      const maisSlots = d.slots.length > 6 ? ` e mais ${d.slots.length - 6} horários` : '';
+      lines.push(`📅 *${d.formattedDate}:*\n• ${displaySlots}${maisSlots}`);
+    }
+
+    return {
+      success: true,
+      message: 'Próximos horários localizados com sucesso.',
+      data: {
+        days: daysWithSlots,
+        formattedText: lines.join('\n\n'),
+      },
+    };
+  } catch (error: any) {
+    console.error('Erro em buscarProximosHorariosDisponiveis:', error);
+    return {
+      success: false,
+      message: `Erro: ${error.message}`,
+      data: { days: [], formattedText: '' },
+    };
+  }
+}
+
+/**
+ * 6. CRIAR NOVO AGENDAMENTO DE CONSULTA
+ */
+export async function criarNovoAgendamento(
+  patientId: string,
+  novaDataHora: string, // YYYY-MM-DD HH:mm
+  clinicId?: string,
+  beneficiarioNome?: string
+): Promise<ToolResult> {
+  try {
+    const patient = await prisma.patient.findUnique({
+      where: { id: patientId },
+    });
+
+    if (!patient) {
+      return { success: false, message: 'Paciente não encontrado para realizar o agendamento.' };
+    }
+
+    const clinic = clinicId
+      ? await prisma.clinic.findUnique({ where: { id: clinicId } })
+      : await prisma.clinic.findFirst();
+
+    if (!clinic) {
+      return { success: false, message: 'Clínica não encontrada no sistema.' };
+    }
+
+    const newStart = parseBRT(novaDataHora);
+    if (isNaN(newStart.getTime())) {
+      return {
+        success: false,
+        message: 'Formato da data/hora inválido. Use AAAA-MM-DD HH:mm (ex: 2026-09-25 14:00).',
+      };
+    }
+
+    const slotDuration = clinic.slotDurationMinutes || 30;
+    const newEnd = addMinutes(newStart, slotDuration);
+
+    // Verificar colisão de horários
+    const conflict = await prisma.appointment.findFirst({
+      where: {
+        clinicId: clinic.id,
+        status: { in: ['AGENDADO', 'CONFIRMADO', 'SCHEDULED', 'CONFIRMED'] },
+        OR: [
+          {
+            startTime: { lte: newStart },
+            endTime: { gt: newStart },
+          },
+          {
+            startTime: { lt: newEnd },
+            endTime: { gte: newEnd },
+          },
+        ],
+      },
+    });
+
+    if (conflict) {
+      return {
+        success: false,
+        message: 'Desculpe, este horário acabou de ser ocupado. Por favor, escolha outro horário.',
+      };
+    }
+
+    const notes =
+      beneficiarioNome && beneficiarioNome.toLowerCase() !== patient.name.toLowerCase()
+        ? `Agendamento para: ${beneficiarioNome} (Titular WhatsApp: ${patient.name})`
+        : 'Agendado via WhatsApp Bot (1º Contato)';
+
+    const newAppointment = await prisma.appointment.create({
+      data: {
+        clinicId: clinic.id,
+        patientId: patient.id,
+        startTime: newStart,
+        endTime: newEnd,
+        status: 'AGENDADO',
+        notes,
+      },
+    });
+
+    const dataFormatada = formatBRT(newStart, true);
+    return {
+      success: true,
+      message: `Agendamento confirmado para ${dataFormatada}!`,
+      data: {
+        appointmentId: newAppointment.id,
+        startTime: newStart.toISOString(),
+        endTime: newEnd.toISOString(),
+        patientName: beneficiarioNome || patient.name,
+      },
+    };
+  } catch (error: any) {
+    console.error('Erro em criarNovoAgendamento:', error);
+    return {
+      success: false,
+      message: `Erro ao criar agendamento: ${error.message}`,
+    };
+  }
+}
+
